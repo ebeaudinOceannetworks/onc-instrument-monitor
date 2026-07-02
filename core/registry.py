@@ -41,21 +41,162 @@ def _load_plugin_class(spec: str) -> type[DataTypePlugin]:
     return getattr(module, class_name)
 
 
-def get_plugins() -> list[DataTypePlugin]:
+def resolve_data_types_and_categories(onc_client) -> dict[str, Any]:
+    """Fetch live categories from ONC and map them into complex prefixes vs a scalar fallback."""
+    # Fetch every active device category code currently registered on the ONC network
+    raw_categories = onc_client._onc.getDeviceCategories()
+    
+    # 🚫 DEVICE CATEGORY EXCLUSION: Filter out ex: 'AISRECEIVER'
+    all_category_codes = [
+        cat['deviceCategoryCode'] for cat in raw_categories 
+        if cat['deviceCategoryCode'].upper() != 'AISRECEIVER'
+        if cat['deviceCategoryCode'].upper() != 'ADAPTER'
+        if cat['deviceCategoryCode'].upper() != 'ALTIMETER'
+        if cat['deviceCategoryCode'].upper() != 'BARS'
+        if cat['deviceCategoryCode'].upper() != 'BBES'
+        if cat['deviceCategoryCode'].upper() != 'BENTHICCRAWLER'
+        if cat['deviceCategoryCode'].upper() != 'BIOFOULING'
+        if cat['deviceCategoryCode'].upper() != 'BIOSPECTROMETER'
+        if cat['deviceCategoryCode'].upper() != 'BOTTOMPROFILER'
+        if cat['deviceCategoryCode'].upper() != 'CAMSYSTEM'
+        if cat['deviceCategoryCode'].upper() != 'CHEMINI'
+        if cat['deviceCategoryCode'].upper() != 'CAMSYSTEM'
+        if cat['deviceCategoryCode'].upper() != 'CORAS'
+        if cat['deviceCategoryCode'].upper() != 'CORK'
+        if cat['deviceCategoryCode'].upper() != 'COVIS'
+        if cat['deviceCategoryCode'].upper() != 'CSEM'
+        if cat['deviceCategoryCode'].upper() != 'DATALOGGER'
+        if cat['deviceCategoryCode'].upper() != 'DC90'
+        if cat['deviceCategoryCode'].upper() != 'DEPTH_TEMP'
+        if cat['deviceCategoryCode'].upper() != 'DEPTHSENSOR'
+        if cat['deviceCategoryCode'].upper() != 'DIVE_COMPUTER'
+        if cat['deviceCategoryCode'].upper() != 'DLRAD'
+        if cat['deviceCategoryCode'].upper() != 'DOM'
+        if cat['deviceCategoryCode'].upper() != 'DRIFTER'
+        if cat['deviceCategoryCode'].upper() != 'GTD'
+        if cat['deviceCategoryCode'].upper() != 'H2OO2EXCHANGE'
+        if cat['deviceCategoryCode'].upper() != 'INTERNAL_DEVICE_MONITOR'
+        if cat['deviceCategoryCode'].upper() != 'LIDAR'
+        if cat['deviceCategoryCode'].upper() != 'MAGNETOMETER'
+        if cat['deviceCategoryCode'].upper() != 'MBPROFILESONAR'
+        if cat['deviceCategoryCode'].upper() != 'MBROTARYSONAR'
+        if cat['deviceCategoryCode'].upper() != 'METHSENSOR'
+        if cat['deviceCategoryCode'].upper() != 'MBIOSENSOR'
+        if cat['deviceCategoryCode'].upper() != 'METSTN'
+        if cat['deviceCategoryCode'].upper() != 'MODEM'
+        if cat['deviceCategoryCode'].upper() != 'MUONTRACKER'
+        if cat['deviceCategoryCode'].upper() != 'NAV'
+        if cat['deviceCategoryCode'].upper() != 'NODE'
+        if cat['deviceCategoryCode'].upper() != 'OCEANOGRAPHICRADAR'
+        if cat['deviceCategoryCode'].upper() != 'ORIENTATION'
+        if cat['deviceCategoryCode'].upper() != 'PARTANALYZER'
+        if cat['deviceCategoryCode'].upper() != 'PIEZOMETER'
+        if cat['deviceCategoryCode'].upper() != 'PLANKTONCAMSYSTEM'
+        if cat['deviceCategoryCode'].upper() != 'PLANKTONSAMPLER'
+        if cat['deviceCategoryCode'].upper() != 'PLATFORM'
+        if cat['deviceCategoryCode'].upper() != 'POCAM'
+        if cat['deviceCategoryCode'].upper() != 'PONECAMERA'
+        if cat['deviceCategoryCode'].upper() != 'POWER_SUPPLY'
+        if cat['deviceCategoryCode'].upper() != 'PPPFLT'
+        if cat['deviceCategoryCode'].upper() != 'PPPINT'
+        if cat['deviceCategoryCode'].upper() != 'PPPORB'
+        if cat['deviceCategoryCode'].upper() != 'PTL'
+        if cat['deviceCategoryCode'].upper() != 'PYRANOMETER'
+        if cat['deviceCategoryCode'].upper() != 'PYRGEOMETER'
+        if cat['deviceCategoryCode'].upper() != 'RADIOMETER'
+        if cat['deviceCategoryCode'].upper() != 'RAIN_GAUGE'
+        if cat['deviceCategoryCode'].upper() != 'REFINEDFUELSFLUOROMETER'
+        if cat['deviceCategoryCode'].upper() != 'ROV_CAMERA'
+        if cat['deviceCategoryCode'].upper() != 'SEDTRAP'
+        if cat['deviceCategoryCode'].upper() != 'SERVER'
+        if cat['deviceCategoryCode'].upper() != 'STANDARDMODULE'
+        if cat['deviceCategoryCode'].upper() != 'SUSPENDED_SEDPROFILER'
+        if cat['deviceCategoryCode'].upper() != 'TARRAY'
+        if cat['deviceCategoryCode'].upper() != 'TEMPHUMID'
+        if cat['deviceCategoryCode'].upper() != 'TEMPOMINI'
+        if cat['deviceCategoryCode'].upper() != 'TEMPSENSOR'
+        if cat['deviceCategoryCode'].upper() != 'TOWEDCAMERASYSTEM'
+        if cat['deviceCategoryCode'].upper() != 'TRANSMISSOMETER'
+        if cat['deviceCategoryCode'].upper() != 'UCRDS'
+        if cat['deviceCategoryCode'].upper() != 'UURS'
+        if cat['deviceCategoryCode'].upper() != 'UWVOLTAMMETRICSYSTEM'
+        if cat['deviceCategoryCode'].upper() != 'VPINST'
+        if cat['deviceCategoryCode'].upper() != 'VPBASE'
+        if cat['deviceCategoryCode'].upper() != 'WATERSAMPLER'
+        if cat['deviceCategoryCode'].upper() != 'WAVE_BUOY'
+        if cat['deviceCategoryCode'].upper() != 'WAVELENGTHOPTICALMODULE'
+        if cat['deviceCategoryCode'].upper() != 'WETLABS_WQM'
+        if cat['deviceCategoryCode'].upper() != 'WINDMONITOR'
+        
+
+    ]
+    
+    # Load configuration file rules
+    with open(CONFIG_DIR / "data_types.yaml", "r") as f:
+        config = yaml.safe_load(f)
+    
+    data_types = config.get("data_types", {})
+    complex_claimed_categories = set()
+    
+    # Step through complex types first and let them claim their matching categories
+    for name, meta in data_types.items():
+        if meta.get("data_class") == "complex":
+            prefixes = meta.get("category_prefixes") or meta.get("categories") or []
+            
+            # Find all live categories matching the prefix tokens (case-insensitive)
+            resolved = [
+                code for code in all_category_codes
+                if any(code.upper().startswith(str(pfx).upper()) for pfx in prefixes)
+            ]
+            
+            meta["resolved_categories"] = resolved
+            complex_claimed_categories.update(resolved)
+            print(f"📦 Plugin [{name:<12}] dynamically claimed {len(resolved)} categories: {resolved}")
+
+    # Fallback: Assign every single remaining category code directly to Scalar
+    scalar_fallback = [
+        code for code in all_category_codes 
+        if code not in complex_claimed_categories
+    ]
+    
+    if "scalar_site" in data_types:
+        data_types["scalar_site"]["resolved_categories"] = scalar_fallback
+        print(f"🌊 Plugin [scalar_site ] dynamically absorbed the remaining {len(scalar_fallback)} categories.")
+
+    return data_types
+
+
+def get_plugins(onc_client: Any) -> list[DataTypePlugin]:
+    """Discover, configure, and instantiate all enabled dashboard plugins safely."""
+    resolved_spec_map = resolve_data_types_and_categories(onc_client)
+    
     plugins: list[DataTypePlugin] = []
     for data_type in enabled_data_types():
         spec = _PLUGIN_REGISTRY.get(data_type)
         if not spec:
             raise ValueError(f"Unknown data_type: {data_type}")
-        plugins.append(_load_plugin_class(spec)())
+            
+        meta = resolved_spec_map.get(data_type, {})
+        categories = meta.get("resolved_categories", [])
+        plugin_class = _load_plugin_class(spec)
+        
+        # Safe Initialization Block
+        if data_type == "scalar_site":
+            plugins.append(plugin_class(categories=categories))
+        else:
+            plugin_instance = plugin_class()
+            plugin_instance.categories = categories
+            plugins.append(plugin_instance)
+        
     return plugins
 
 
-def get_plugin(data_type: str) -> DataTypePlugin:
+def get_plugin(data_type: str, categories: list[str] | None = None) -> DataTypePlugin:
+    """Fallback single-plugin loader (useful for testing isolated contexts)."""
     spec = _PLUGIN_REGISTRY.get(data_type)
     if not spec:
         raise ValueError(f"Unknown data_type: {data_type}")
-    return _load_plugin_class(spec)()
+    return _load_plugin_class(spec)(categories=categories or [])
 
 
 def collect_devices(plugins: list[DataTypePlugin]) -> list[dict[str, Any]]:
@@ -70,11 +211,7 @@ def collect_devices(plugins: list[DataTypePlugin]) -> list[dict[str, Any]]:
 
 
 def collect_sites(plugins: list[DataTypePlugin]) -> list[dict[str, Any]]:
-    """All sites across enabled plugins, merged by siteCode (PER SITE view).
-
-    Devices from different data types at the same location are combined so a
-    site can show both scalar and complex instruments together.
-    """
+    """All sites across enabled plugins, merged by siteCode (PER SITE view)."""
     merged: dict[str, dict[str, Any]] = {}
     for plugin in plugins:
         for site in plugin.list_sites():

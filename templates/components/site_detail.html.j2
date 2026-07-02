@@ -61,8 +61,54 @@
 					<td>{{ device.deviceCategoryCode }}</td>
 					<td>{{ device.deviceCode }}</td>
 					<td>{{ device.deviceID }}</td>
-					<td><span class="status-pill status-{{ device.status.label }}" style="background-color: {{ device.status.color }}; color: #fff;">{{ device.status.icon }} {{ device.status.display }}</span></td>
-					<td>{% if device.jb_info %}{{ device.jb_info[0].devicecode | default('linked') }}{% else %}—{% endif %}</td>
+					
+					<td>
+						{% set status_key = (device.status.label if device.status.label is defined else device.status) | lower %}
+						
+						{# Local style map designed to mirror your dashboard status legend precisely #}
+						{% set UI_THEME = {
+							'good':         {'color': '#28a745', 'icon': '✓', 'display': 'Good'},
+							'intermittent': {'color': '#ffc107', 'icon': '~', 'display': 'Intermittent'},
+							'bad':          {'color': '#fd7e14', 'icon': '⚠️', 'display': 'Bad data'},
+							'no_data':      {'color': '#dc3545', 'icon': '✗', 'display': 'No data'},
+							'compromised':  {'color': '#6f42c1', 'icon': '⊘', 'display': 'Compromised'}
+						} %}
+						
+						{% set style = UI_THEME.get(status_key, {'color': '#757575', 'icon': '❓', 'display': status_key}) %}
+						<span class="status-badge" style="background-color: {{ style.color }}; color: #fff;">
+							{{ style.icon }} {{ style.display }}
+						</span>
+					</td>
+
+					<td>
+						{% if device.lineage %}
+							<div style="display: flex; flex-direction: column; gap: 6px; max-width: 260px;">
+								{% for hop in device.lineage %}
+									<div style="display: flex; flex-direction: column; border-left: 2px solid #dee2e6; padding-left: 8px; margin-left: 4px;">
+										<div style="font-size: 11px; font-weight: bold; color: #495057; display: flex; align-items: center; gap: 4px;">
+											{% if hop.chassis_status == 'good' %}🟢{% else %}⚪{% endif %}
+											<span>{{ hop.category }}: <code style="font-size: 11px; background: #f1f3f5; padding: 1px 4px; border-radius: 3px;">{{ hop.device_code }}</code></span>
+										</div>
+										
+										{% if hop.status_channel %}
+											<div style="font-size: 10px; margin-top: 2px; padding-left: 14px;">
+												{% if hop.port_status == 'good' %}
+													<span style="color: #28a745; font-weight: 500;">⚡ Port Power: On</span>
+												{% elif hop.port_status == 'bad' %}
+													<span style="color: #dc3545; font-weight: 500;">🛑 Port Power: Off</span>
+												{% else %}
+													<span style="color: #fd7e14; font-weight: 500;">⚠️ Port Power: Unknown</span>
+												{% endif %}
+											</div>
+										{% endif %}
+									</div>
+								{% endfor %}
+							</div>
+						{% else %}
+							<span style="color: #9e9e9e;">—</span>
+						{% endif %}
+					</td>
+
 					<td>
 						{% for ticket in device.jira_tickets %}
 						<a href="{{ ticket.url }}" target="_blank">{{ ticket.key }}</a>{% if not loop.last %}, {% endif %}

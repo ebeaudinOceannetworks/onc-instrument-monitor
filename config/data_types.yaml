@@ -1,49 +1,37 @@
-# Registered data_type plugins.
-#   data_class: complex  -> hydrophone, seismometer, ADCP (viewed PER INSTRUMENT)
-#   data_class: scalar   -> CTD, oxygen, fluorometer, ... (viewed PER SITE)
-# Enable/disable which plugins load via ENABLED_DATA_TYPES in .env.
-#
-# Complex plugins use archive-file availability. Configure per type:
-#   categories            deviceCategoryCodes to discover (ONC discovery service)
-#   archive_extensions    file extensions counted for availability
-#   expected_files_per_day expected count per extension per day
-#   availability_days     lookback window for the availability strip
-
+# config/data_types.yaml
 data_types:
   scalar_site:
     label: Water Properties (Scalar)
     data_class: scalar
     natural_view: site
     description: >
-      Site-centric monitoring for CTD, oxygen optodes, fluorometers, pCO2,
-      PAR, ice profiler, pH, and related scalar instruments.
+      Site-centric tracking. Dynamically absorbs all categories not claimed
+      by complex file-archive plugins.
 
   hydrophone:
     label: Hydrophones
     data_class: complex
     natural_view: instrument
-    categories: [HYDROPHONE]
+    category_prefixes: [HYDROPHONE]
     archive_extensions: [fft, flac, mat]
     expected_files_per_day: 288
     availability_days: 7
-    description: Complex audio data with availability plots and archive file checks.
 
   seismometer:
     label: Seismometers
     data_class: complex
     natural_view: instrument
-    categories: [SEISMOMETER, BOTPR]
+    # 🕵️ ADDED BBS AND SPS TO MATCH THE TRUE ONC DATABASE CODES
+    category_prefixes: [SEISMOMETER, BOTPR, BBS, SPS]
     archive_extensions: [mseed]
     expected_files_per_day: 24
     availability_days: 7
-    description: Complex waveform data.
 
   adcp:
-    label: ADCP
+    label: ADCPs
     data_class: complex
     natural_view: instrument
-    categories: [ADCP2MHZ, ADCP55KHZ, ADCP75KHZ, ADCP150KHZ, ADCP300KHZ, ADCP600KHZ]
+    category_prefixes: [ADCP]
     archive_extensions: [rdi, nc]
     expected_files_per_day: 24
     availability_days: 7
-    description: Complex current profile data.

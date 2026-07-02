@@ -88,13 +88,16 @@ class ONCClient:
     ) -> list[dict[str, Any]]:
         end = datetime.now(timezone.utc)
         start = end - timedelta(hours=hours)
+        
+        # Initialize the baseline tracking metadata parameters
         params: dict[str, Any] = {
             "deviceCode": device_code,
             "dateFrom": start.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
             "dateTo": end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-            # ONC expects resamplePeriod in SECONDS (e.g. 900 = 15 min).
-            "resamplePeriod": _ttl("SCALAR_RESAMPLE_SECONDS", 900),
         }
+        if quality_control != "raw":
+            params["resamplePeriod"] = _ttl("SCALAR_RESAMPLE_SECONDS", 900)
+
         if quality_control:
             params["qualityControl"] = quality_control
 

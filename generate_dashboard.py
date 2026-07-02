@@ -2,7 +2,7 @@
 """Generate the ONC Instrument Monitor dashboard HTML.
 
 Builds two views from the same underlying device data:
-    * site        -> Dashboard_site.html        (PER SITE, scalar-friendly)
+    * site     -> Dashboard_site.html        (PER SITE, scalar-friendly)
     * instrument  -> Dashboard_instrument.html   (PER INSTRUMENT, complex-friendly)
 Dashboard.html is a copy of the default view (site).
 """
@@ -23,7 +23,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from core.db import db_configured  # noqa: E402
 from core.jira_client import JiraClient  # noqa: E402
-from core.onc_client import resolve_onc_token  # noqa: E402
+from core.onc_client import resolve_onc_token, ONCClient  # noqa: E402
 from core.parallel import thread_map  # noqa: E402
 from core.registry import (  # noqa: E402
     collect_devices,
@@ -183,7 +183,13 @@ def _write_detail_json(sites: list[dict]) -> None:
 def generate_all() -> dict[str, Path]:
     token = resolve_onc_token()
     jira = JiraClient()
-    plugins = get_plugins()
+    
+    # Initialize the core client block cleanly inside the runtime method
+    onc_client = ONCClient()
+    
+    # 🔌 THE PIPELINE CONNECTOR: Supply the live network client directly into the configuration engine
+    plugins = get_plugins(onc_client)
+    
     for plugin in plugins:
         plugin.refresh()
 
