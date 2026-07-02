@@ -1,0 +1,39 @@
+<div class="sidenav">
+	<div class="sidebar-header">
+		<p class="sidebar-eyebrow">Navigator</p>
+		<h2>{% if view == 'instrument' %}Instruments{% else %}Monitoring Sites{% endif %}</h2>
+		<p class="sidebar-description">
+			{% if view == 'instrument' %}Grouped by device category code.{% else %}Grouped by network, then site.{% endif %}
+		</p>
+	</div>
+	<div class="nav-container">
+		{% for group in nav_groups %}
+		<details class="nav-group-card" open>
+			<summary class="nav-group-header">
+				<div class="group-header-main">
+					<span class="group-name">{{ group.label }}</span>
+					<span class="group-count">{{ group.entries|length }}</span>
+				</div>
+				<div class="group-status-icons">
+					{% for item in group.entries %}
+					<span class="status-dot-small" style="color: {{ item.statusColor }}" title="{{ item.name }}">{{ item.statusIcon }}</span>
+					{% endfor %}
+				</div>
+			</summary>
+			<div class="nav-sub-items">
+				{% for item in group.entries %}
+				<a href="#" class="nav-item sensor-link sidebar-map-target" data-location-code="{{ item.locationCode }}">
+					<span class="status-indicator-dot" style="color: {{ item.statusColor }}" title="{{ item.name }}">{{ item.statusIcon }}</span>
+					<span class="sensor-copy">
+						<span class="sensor-name">{{ item.name }}</span>
+						<span class="sensor-meta">{{ item.meta }}</span>
+					</span>
+				</a>
+				{% endfor %}
+			</div>
+		</details>
+		{% else %}
+		<p class="sidebar-empty">No {{ 'instruments' if view == 'instrument' else 'sites' }} to show. Configure sites in <code>config/scalar_sites.yaml</code> and set your ONC token.</p>
+		{% endfor %}
+	</div>
+</div>

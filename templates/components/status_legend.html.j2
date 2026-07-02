@@ -1,0 +1,7 @@
+<div class="status-legend">
+	<span class="legend-item"><span class="legend-dot" style="background:#28a745"></span>{{ status_labels.good | default('Good') }}</span>
+	<span class="legend-item"><span class="legend-dot" style="background:#ffc107"></span>{{ status_labels.intermittent | default('Intermittent data') }}</span>
+	<span class="legend-item"><span class="legend-dot" style="background:#fd7e14"></span>{{ status_labels.bad | default('Bad data') }}</span>
+	<span class="legend-item"><span class="legend-dot" style="background:#dc3545"></span>{{ status_labels.no_data | default('No data') }}</span>
+	<span class="legend-item"><span class="legend-dot" style="background:#6f42c1"></span>{{ status_labels.compromised | default('Compromised') }}</span>
+</div>

@@ -1,0 +1,179 @@
+h1 {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 340px;
+    height: 32px;
+    box-sizing: border-box;
+    color: #ffffff;
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 14px;
+    z-index: 10000000;
+    border-bottom: 1px solid #12598a;
+    border-right: 1px solid #12598a;
+    background: #1f77b4;
+    box-shadow: 0 3px 2px rgba(0,0,0,0.2);
+}
+
+
+/* The sidebar menu */
+.sidenav {
+    height: 100%;
+    width: 240px;
+    position: fixed;
+    z-index: 1;
+    top: 28px;
+    left: 0;
+    background-color: rgb(214, 214, 214);
+    overflow-x: hidden;
+}
+    .sidenav ul, .sidenav li {
+        padding: 0;
+        margin: 0;
+        list-style-type: none;
+    }
+    .sidenav ul.nav {
+        padding: 10px 4px;
+    }
+        .sidenav ul.nav ul {
+            margin-bottom: 16px;
+        }
+            .sidenav ul.nav ul li {
+                
+            }
+    .sidenav a {
+        display: block;
+        text-decoration: none;
+        border: 1px solid #666;
+        margin-bottom: 2px;
+    }
+    .sidenav a:hover > span {
+        background: rgb(255, 253, 223);
+    }
+    .sidenav .device, .sidenav .sensor {
+        position: relative;
+        display: block;
+        background-color: #FFF;
+        font-size: 12px;
+        line-height: 16px;
+        padding: 6px 14px;
+    }
+    .sidenav .device span, .sidenav .sensor span {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        padding: 6px 8px;
+        min-width: 42px;
+        text-align: center;
+        color: #FFF;
+    }
+    .sidenav .device span { background-color: #094e4b; }
+    .sidenav .sensor span { background-color: #804015; }
+    .sidenav .device {
+        color: #03534f;
+        border-color: #007973;
+        padding-left: 66px;
+    }
+    .sidenav .sensor {
+        color: #92430f;
+        border-color: #b3500e;
+        padding-left: 66px;
+    }
+
+
+  /* Style page content */
+  .main {
+        position: relative;
+        margin-left: 240px; /* Same as the width of the sidebar */
+        padding: 10px 10px 10px 10px;
+  }
+  
+
+body {
+    background: rgb(243, 243, 243);
+    font-family: -apple-system, 'Helvetica Neue', 'Helvetica', 'Arial', 'Lucida Grande', sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+.oncWidgetGroup {
+    
+}
+.clear {
+    clear: both;
+}
+.widgetWrap .oncWidget {
+    width: 100%;
+}
+.widgetWrap .statusMsg {
+    margin-top: 15px;
+}
+
+
+/* sensor plot widget styles */
+.widgetWrap {
+    padding: 10px 16px;
+    margin: 15px 0 25px;
+    background: #fff;
+    color: rgb(115, 132, 154);
+    box-sizing: border-box;
+    font-size: 12px;
+    box-shadow: 0 .175em .5em rgba(2,8,20,.2),0 .085em .175em rgba(2,8,20,.16);
+    border-radius: 4px;
+}
+.widgetWrap .site,
+.widgetWrap .device,
+.widgetWrap .sensor {
+    position: relative;
+    display: inline-block;
+    color: #fff;
+    font-size: .85714286rem;
+    border-radius: .28571429rem;
+    padding: 6px 14px;
+    margin-right: 10px;
+}
+.widgetWrap .site span,
+.widgetWrap .device span,
+.widgetWrap .sensor span {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    padding: 6px 8px;
+    border-top-left-radius: .28571429rem;
+    border-bottom-left-radius: .28571429rem;
+}
+.widgetWrap .site   span { background-color: #0e3c5f; }
+.widgetWrap .device span { background-color: #094e4b; }
+.widgetWrap .sensor span { background-color: #804015; }
+
+.widgetWrap .site {
+    background-color: #2185d0;
+    border-color: #2185d0;
+}
+.widgetWrap .device {
+    background-color: #007973;
+    border-color: #007973;
+    padding-left: 66px;
+    margin-bottom: 10px;
+}
+.widgetWrap .sensor {
+    background-color: #b3500e;
+    border-color: #b3500e;
+    font-weight: bold;
+    padding-left: 66px;
+}
+
+/* Plotting utility link */
+.widgetWrap a.utility:link, .widgetWrap a.utility:visited {
+    display: inline-block;
+    margin-top: 5px;
+    color: #849eb1;
+    text-decoration: none;
+}
+.widgetWrap a.utility:hover {
+    color: #1f77b4;
+    text-decoration: underline;
+}

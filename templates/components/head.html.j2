@@ -1,0 +1,5605 @@
+	<meta charset="UTF-8">
+	<title>{{ dashboard_title }} - {% if dashboard_variant == 'public' %}Public Status Dashboard{% else %}Data Availability Monitor{% endif %}</title>
+	<script src="{{ (dashboard_url_prefix or '') ~ '/assets/uPlot.iife.min.js' }}"></script>
+	<script src="{{ (dashboard_url_prefix or '') ~ '/assets/oncdw.min.js' }}"></script>
+	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+	<script src="{{ (dashboard_url_prefix or '') ~ '/assets/monitor_map.js' }}"></script>
+	<script src="{{ (dashboard_url_prefix or '') ~ '/assets/scalar_plots.js' }}"></script>
+	<link rel="stylesheet" href="{{ (dashboard_url_prefix or '') ~ '/assets/uPlot.min.css' }}" />
+	<link rel="stylesheet" href="{{ (dashboard_url_prefix or '') ~ '/assets/oncdw.min.css' }}" />
+	<link rel="stylesheet" href="{{ (dashboard_url_prefix or '') ~ '/assets/instaboard.css' }}" />
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+	<link rel="stylesheet" href="{{ (dashboard_url_prefix or '') ~ '/assets/hydrophone_map.css' }}" />
+	<link rel="stylesheet" href="{{ (dashboard_url_prefix or '') ~ '/assets/monitor.css' }}" />
+	<script>
+	(function() {
+		var storedTheme = null;
+		try {
+			storedTheme = window.localStorage.getItem('hydrophoneDashboardTheme');
+		} catch (err) {}
+		var initialTheme = (storedTheme === 'light' || storedTheme === 'dark')
+			? storedTheme
+			: ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+		document.documentElement.setAttribute('data-theme', initialTheme);
+		document.documentElement.style.colorScheme = initialTheme;
+	})();
+	</script>
+	<style>
+		:root {
+			--font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+			--font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+			--theme-bg: #edf2f7;
+			--theme-surface: #f7f9fc;
+			--theme-surface-strong: #ffffff;
+			--theme-surface-muted: #eef3f8;
+			--theme-sidebar-bg: rgba(248, 250, 252, 0.94);
+			--theme-sidebar-strong: rgba(255, 255, 255, 0.92);
+			--theme-border: #d7e0ea;
+			--theme-border-strong: #bfcbd8;
+			--theme-divider: rgba(118, 137, 157, 0.22);
+			--theme-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+			--theme-shadow-soft: 0 8px 22px rgba(15, 23, 42, 0.06);
+			--theme-text: #142032;
+			--theme-text-muted: #59697b;
+			--theme-text-soft: #7a8899;
+			--theme-accent: #0b6aa8;
+			--theme-accent-strong: #0b4e82;
+			--theme-accent-soft: rgba(11, 106, 168, 0.12);
+			--theme-topbar-start: #0b406f;
+			--theme-topbar-end: #126a73;
+			--theme-topbar-border: rgba(255, 255, 255, 0.12);
+			--theme-topbar-chip: rgba(255, 255, 255, 0.14);
+			--theme-topbar-chip-border: rgba(255, 255, 255, 0.18);
+			--theme-button-surface: rgba(255, 255, 255, 0.14);
+			--theme-button-surface-hover: rgba(255, 255, 255, 0.22);
+			--theme-button-text: #ffffff;
+			--theme-legend-bg: #edf3f8;
+			--theme-summary-bg: #f7fafc;
+			--theme-summary-border: #d0dae4;
+		}
+
+		html[data-theme="dark"] {
+			--theme-bg: #09121b;
+			--theme-surface: #0f1824;
+			--theme-surface-strong: #132030;
+			--theme-surface-muted: #172536;
+			--theme-sidebar-bg: rgba(9, 18, 27, 0.92);
+			--theme-sidebar-strong: rgba(20, 32, 48, 0.88);
+			--theme-border: #243446;
+			--theme-border-strong: #31465d;
+			--theme-divider: rgba(151, 176, 201, 0.18);
+			--theme-shadow: 0 22px 44px rgba(2, 6, 12, 0.44);
+			--theme-shadow-soft: 0 10px 24px rgba(2, 6, 12, 0.3);
+			--theme-text: #e8eef5;
+			--theme-text-muted: #aab7c6;
+			--theme-text-soft: #7f93a7;
+			--theme-accent: #7cc7ff;
+			--theme-accent-strong: #4aa9ef;
+			--theme-accent-soft: rgba(124, 199, 255, 0.16);
+			--theme-topbar-start: #08111c;
+			--theme-topbar-end: #133a57;
+			--theme-topbar-border: rgba(255, 255, 255, 0.08);
+			--theme-topbar-chip: rgba(255, 255, 255, 0.08);
+			--theme-topbar-chip-border: rgba(255, 255, 255, 0.1);
+			--theme-button-surface: rgba(255, 255, 255, 0.08);
+			--theme-button-surface-hover: rgba(255, 255, 255, 0.14);
+			--theme-button-text: #ecf4fb;
+			--theme-legend-bg: #121f2d;
+			--theme-summary-bg: #101b29;
+			--theme-summary-border: #26384c;
+		}
+
+		/* Override any tile borders/outlines that could create red grid artifacts */
+		.oncWidget.widget_archiveMap .contents * { box-shadow: none !important; outline: none !important; }
+		.oncWidget.widget_archiveMap .contents .tile, .oncWidget.widget_archiveMap .contents .bar { border: none !important; }
+		.uplot .plot { outline: none; }
+		.oncWidgetGroup.gifs { text-align: justify; }
+		.oncWidgetGroup.gifs .widgetWrap { display: inline-block; width: auto;  clear: none; margin-right: 5px; }
+		.oncWidgetGroup.gifs .contents {  }
+		
+		/* Status indicator styles */
+		.status-indicator { display: inline-block; padding: 4px 8px; border-radius: 4px; color: white; font-weight: bold; font-size: 12px; margin-left: 10px; }
+		.status-badge { display: inline-block; padding: 2px 6px; border-radius: 12px; color: white; font-weight: bold; font-size: 11px; margin-left: 5px; }
+		.data-status-summary {
+			background: var(--theme-surface-strong, #f8f9fa);
+			border: 1px solid var(--theme-border, #dee2e6);
+			border-radius: 8px;
+			padding: 10px;
+			margin: 10px 0;
+		}
+		.data-status-block {
+			display: block;
+		}
+		.data-status-headline {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px 12px;
+			align-items: baseline;
+		}
+		.data-status-headline-label,
+		.data-status-subheading {
+			font-size: 11px;
+			font-weight: 700;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			color: var(--theme-text-soft, #6c757d);
+		}
+		.data-status-headline-text {
+			font-size: 14px;
+			font-weight: 600;
+			line-height: 1.35;
+			color: var(--theme-text, #1f2a36);
+		}
+			.data-status-grid {
+				display: grid;
+				grid-template-columns: minmax(230px, 1.35fr) minmax(150px, 0.75fr) minmax(150px, 0.75fr) minmax(330px, 1.8fr);
+				gap: 10px;
+				align-items: stretch;
+			}
+			.data-status-grid.no-last-data.has-coverage-types {
+				grid-template-columns: minmax(290px, 1.15fr) minmax(170px, 0.62fr) minmax(430px, 2fr);
+			}
+			.data-status-metric {
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+			gap: 3px;
+			min-height: 66px;
+			padding: 12px 14px;
+			border-radius: 8px;
+			background: color-mix(in srgb, var(--theme-surface, #f7f9fc) 82%, transparent);
+			border: 1px solid var(--theme-divider, rgba(112, 122, 136, 0.18));
+			min-width: 0;
+		}
+		.data-status-metric-status {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr);
+			align-items: center;
+			column-gap: 12px;
+		}
+		.data-status-state-icon {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 34px;
+			height: 34px;
+			border-radius: 50%;
+			color: #fff;
+			font-size: 16px;
+			font-weight: 800;
+			box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+		}
+		.data-status-copy {
+			display: grid;
+			gap: 4px;
+			min-width: 0;
+		}
+		.data-status-metric-wide,
+		.data-status-note {
+			grid-column: span 2;
+		}
+		.data-status-metric-label {
+			font-size: 11px;
+			font-weight: 700;
+			letter-spacing: 0.11em;
+			text-transform: uppercase;
+			color: var(--theme-text-soft, #6c757d);
+		}
+		.data-status-metric-value {
+			font-size: 16px;
+			font-weight: 700;
+			line-height: 1.25;
+			color: var(--theme-text, #1f2a36);
+		}
+		.data-status-metric-detail {
+			font-size: 12px;
+			line-height: 1.3;
+			color: var(--theme-text-muted, #495057);
+		}
+		.data-coverage-breakdown {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+		.data-status-grid.has-coverage-types .data-status-types {
+			grid-column: span 3;
+		}
+			.data-coverage-list {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+				gap: 8px;
+			}
+		.data-coverage-item {
+			position: relative;
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-rows: auto 4px;
+			align-items: center;
+			gap: 7px 8px;
+			min-height: 50px;
+			padding: 9px 10px;
+			border-radius: 7px;
+			background: color-mix(in srgb, var(--theme-surface-muted, #eef3f8) 76%, transparent);
+			border: 1px solid var(--theme-divider, rgba(112, 122, 136, 0.18));
+			overflow: hidden;
+		}
+		.data-coverage-copy {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+			min-width: 0;
+		}
+		.data-coverage-type {
+			font-size: 14px;
+			font-weight: 800;
+			color: var(--theme-text, #1f2a36);
+			text-transform: lowercase;
+		}
+		.data-coverage-summary {
+			font-size: 11px;
+			line-height: 1.25;
+			color: var(--theme-text-muted, #495057);
+		}
+		.data-coverage-icon {
+			flex: 0 0 auto;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 20px;
+			height: 20px;
+			border-radius: 50%;
+			font-size: 12px;
+			font-weight: 800;
+			line-height: 1;
+			color: #fff;
+		}
+		.data-coverage-item.is-good {
+			border-color: rgba(34, 197, 94, 0.28);
+		}
+		.data-coverage-item.is-good .data-coverage-icon {
+			background: #2f9e44;
+		}
+		.data-coverage-item.is-good .data-coverage-bar span {
+			background: #2dd4bf;
+		}
+		.data-coverage-item.is-warning {
+			border-color: rgba(245, 158, 11, 0.34);
+		}
+		.data-coverage-item.is-warning .data-coverage-icon {
+			background: #d97706;
+		}
+		.data-coverage-item.is-warning .data-coverage-bar span {
+			background: #f59e0b;
+		}
+		.data-coverage-item.is-critical {
+			border-color: rgba(239, 68, 68, 0.34);
+		}
+		.data-coverage-item.is-critical .data-coverage-icon {
+			background: #dc2626;
+		}
+		.data-coverage-item.is-critical .data-coverage-bar span {
+			background: #ef4444;
+		}
+		.data-coverage-bar {
+			grid-column: 1 / -1;
+			width: 100%;
+			height: 4px;
+			border-radius: 999px;
+			background: color-mix(in srgb, var(--theme-border-strong, #bfcbd8) 42%, transparent);
+			overflow: hidden;
+		}
+		.data-coverage-bar span {
+			display: block;
+			height: 100%;
+			border-radius: inherit;
+		}
+		.data-status-note {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+		}
+		.data-status-note-text {
+			font-size: 14px;
+			line-height: 1.45;
+			color: var(--theme-text, #1f2a36);
+		}
+		@media (max-width: 1100px) {
+			.data-status-grid {
+				grid-template-columns: repeat(2, minmax(220px, 1fr));
+			}
+			.data-status-types {
+				grid-column: 1 / -1;
+			}
+		}
+		@media (max-width: 640px) {
+			.data-status-grid {
+				grid-template-columns: 1fr;
+			}
+			.data-status-metric-wide,
+			.data-status-note,
+			.data-status-types {
+				grid-column: auto;
+			}
+			.data-coverage-list {
+				grid-template-columns: 1fr;
+			}
+		}
+		.status-legend { background: #e9ecef; padding: 10px; border-radius: 6px; margin-bottom: 20px; }
+		.status-legend h3 { margin-top: 0; }
+		.legend-item { display: inline-block; margin-right: 15px; }
+		
+		/* Sidenav styles */
+		/* Sidenav styles */
+		.sidenav { 
+			position: fixed; 
+			left: 0; 
+			top: 60px; /* Below the top bar */
+			width: 250px; 
+			height: calc(100vh - 60px); 
+			overflow-y: auto; 
+			background: #f8f9fa; /* Light grey background for contrast with cards */
+			padding: 0; 
+			box-shadow: 2px 0 10px rgba(0,0,0,0.05); 
+			z-index: 50; 
+			border-right: 1px solid #dee2e6;
+			font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+		}
+		
+		.sidenav h2 { 
+			margin: 0; 
+			padding: 15px 20px;
+			color: #343a40; 
+			border-bottom: 1px solid #dee2e6; 
+			font-size: 16px;
+			font-weight: 700;
+			background: #ffffff;
+			position: sticky;
+			top: 0;
+			z-index: 2;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+		}
+
+		.nav-container {
+			padding: 15px 12px;
+		}
+
+		/* Card-like styling for each site group - Simplified for performance */
+		.nav-group {
+			background: #ffffff;
+			border: 1px solid #dee2e6;
+			border-radius: 4px;
+			margin-bottom: 10px;
+			overflow: hidden;
+			/* Removed box-shadow and transition for performance */
+		}
+		
+		.nav-group:hover {
+			border-color: #adb5bd;
+		}
+
+		.nav-item {
+			display: flex;
+			align-items: center;
+			padding: 10px 15px;
+			text-decoration: none;
+			color: #495057;
+		}
+
+		.nav-item:hover {
+			background-color: #f8f9fa;
+		}
+
+		.nav-site-group {
+			margin: 10px;
+			border: 1px solid #dee2e6;
+			border-radius: 6px;
+			overflow: hidden;
+			background-color: #ffffff;
+		}
+
+		details.nav-site-card {
+			margin-bottom: 10px;
+		}
+
+		details.nav-site-card:last-child {
+			margin-bottom: 0;
+		}
+
+		.site-link {
+			font-weight: 700;
+			color: #212529;
+			background-color: #f8f9fa; /* Slightly darker header for the card */
+			border-bottom: 1px solid #dee2e6;
+			display: flex;
+			justify-content: flex-start; /* Icon beside text */
+			gap: 10px;
+			align-items: flex-start;
+		}
+
+		.site-link:hover {
+			background-color: #e9ecef;
+			color: #007bff;
+		}
+
+		summary.site-link {
+			list-style: none;
+			cursor: pointer;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		summary.site-link::-webkit-details-marker {
+			display: none;
+		}
+
+		summary.site-link::before {
+			content: '▶';
+			font-size: 9px;
+			color: #adb5bd;
+			transition: transform 0.2s;
+			margin-right: 8px;
+			flex-shrink: 0;
+		}
+
+		details.nav-site-card[open] > summary.site-link::before {
+			transform: rotate(90deg);
+		}
+
+		details.nav-site-card[open] > summary.site-link {
+			border-bottom: 1px solid #dee2e6;
+		}
+
+		.site-info {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+			flex-grow: 1;
+			min-width: 0;
+		}
+
+		.site-code {
+			font-size: 14px;
+		}
+
+		.status-indicator-dot {
+			font-size: 12px;
+			/* Icon is now flexed via gap, no special positioning needed */
+		}
+
+		.nav-sub-items {
+			background-color: #ffffff; /* Clean background */
+			padding-bottom: 5px;
+		}
+
+		.nav-site-sensors {
+			background-color: #ffffff;
+		}
+
+		.sensor-link {
+			padding: 8px 15px 8px 35px; /* Indented */
+			font-size: 13px;
+			color: #6c757d;
+			border-left: 3px solid transparent; /* Selection indicator placeholder */
+			border-top: 1px solid #f1f3f5; /* Subtle separator between sensors */
+		}
+		
+		/* Remove top border for first sensor to connect with header */
+		.sensor-link:first-of-type {
+			border-top: none;
+		}
+
+		.sensor-link:hover {
+			color: #343a40;
+			background-color: #f8f9fa;
+			border-left-color: #adb5bd;
+		}
+
+		.site-name {
+			display: block;
+			font-size: 14px;
+			font-weight: 700;
+			color: #212529;
+		}
+
+		.site-meta {
+			display: block;
+			font-size: 12px;
+			color: #6c757d;
+			font-family: monospace;
+		}
+
+		.sensor-name {
+			flex: 1;
+			min-width: 0;
+			color: inherit;
+		}
+
+		.sensor-code {
+			font-family: monospace;
+			font-size: 11px;
+			color: #6c757d;
+			background: #eef2f5;
+			border: 1px solid #d9e1e8;
+			padding: 1px 5px;
+			border-radius: 999px;
+			margin-left: auto;
+			white-space: nowrap;
+		}
+
+		.sensor-id {
+			font-family: monospace;
+			background: #e9ecef;
+			padding: 1px 5px;
+			border-radius: 3px;
+			margin-right: 8px;
+			font-size: 11px;
+			color: #495057;
+			border: 1px solid #dee2e6;
+		}
+
+		/* Sidebar Grouping */
+		details.nav-group-card {
+			background: #ffffff;
+			border: 1px solid #dee2e6;
+			border-radius: 4px;
+			margin-bottom: 10px;
+			overflow: hidden;
+		}
+		
+		summary.nav-group-header {
+			padding: 10px 12px;
+			background-color: #ffffff;
+			cursor: pointer;
+			font-weight: 600;
+			color: #343a40;
+			display: flex;
+			justify-content: space-between;
+			align-items: flex-start;
+			border-bottom: 1px solid transparent;
+			transition: background-color 0.2s;
+		}
+		
+		details.nav-group-card[open] summary.nav-group-header {
+			border-bottom: 1px solid #f1f3f5;
+			background-color: #f8f9fa;
+		}
+
+		summary.nav-group-header:hover {
+			background-color: #f8f9fa;
+		}
+		
+		/* Remove default marker */
+		summary.nav-group-header { list-style: none; }
+		summary.nav-group-header::-webkit-details-marker { display: none; }
+
+		.group-name {
+			font-size: 14px;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+		
+		/* Custom arrow indicator */
+		.group-name::before {
+			content: '▶';
+			font-size: 9px;
+			color: #adb5bd;
+			transition: transform 0.2s;
+		}
+		
+		details.nav-group-card[open] .group-name::before {
+			transform: rotate(90deg);
+		}
+
+		.group-status-icons {
+			display: flex;
+			flex: 0 1 116px;
+			flex-wrap: wrap;
+			justify-content: flex-end;
+			align-content: flex-start;
+			gap: 3px;
+			max-width: 116px;
+			margin-left: 8px;
+		}
+		
+		.status-dot-small {
+			font-size: 8px;
+			line-height: 1;
+		}
+		
+		/* Scrollbar styling */
+		.sidenav::-webkit-scrollbar { width: 6px; }
+		.sidenav::-webkit-scrollbar-track { background: #f1f1f1; }
+		.sidenav::-webkit-scrollbar-thumb { background: #ced4da; border-radius: 3px; }
+		.sidenav::-webkit-scrollbar-thumb:hover { background: #adb5bd; }
+		
+		/* Main layout adjustments */
+		body.dashboard-shell { 
+			margin-left: 270px; /* Sidebar width + padding */
+			padding: 80px 20px 20px 20px; /* Top padding clears the fixed header */
+			font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+			background-color: #ffffff;
+		}
+
+		body.public-detail-body {
+			margin: 0;
+			padding: 20px;
+			font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+			background-color: #f5f7fa;
+		}
+
+		.public-detail-main {
+			max-width: 1260px;
+			margin: 0 auto;
+		}
+
+		body.public-detail-body .main {
+			margin: 0;
+			padding: 0;
+		}
+
+		body.public-detail-body .section-header {
+			margin-top: 0;
+		}
+		
+		.top-bar {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 60px;
+			background-color: #0056b3; /* ONC Blue approx */
+			color: white;
+			z-index: 100;
+			display: flex;
+			align-items: center;
+			padding: 0 20px;
+			box-sizing: border-box;
+			box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+		}
+		
+		.top-bar h1 {
+			margin: 0;
+			font-size: 20px;
+			padding: 0;
+			border: none;
+			color: white;
+			/* Reset instaboard.css h1 styles */
+			position: static;
+			width: auto;
+			height: auto;
+			background: transparent;
+			box-shadow: none;
+		}
+		
+		.main { margin-left: 0; padding: 0; }
+		.section-header { border-left: 5px solid; padding-left: 10px; margin-top: 30px; }
+		.section-subheader { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; color: #495057; font-size: 13px; }
+		.section-subheader .label { font-weight: 600; color: #343a40; }
+		.section-subheader .muted { color: #6c757d; }
+		.section-metadata-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 16px; flex: 1 1 360px; }
+		.mapping-names { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+		.device-links { display: flex; flex-wrap: wrap; gap: 6px; }
+		.device-link { display: inline-block; padding: 3px 8px; border-radius: 4px; border: 1px solid #ced4da; background: #f8f9fa; color: #0056b3; text-decoration: none; font-size: 12px; }
+		.device-link:hover { background: #e9ecef; }
+		.public-section-header,
+		.internal-section-header {
+			position: relative;
+			display: grid;
+			gap: 18px;
+			padding: 4px 0 18px 18px;
+			border-left-width: 4px;
+		}
+		.public-section-header::after,
+		.internal-section-header::after {
+			content: "";
+			position: absolute;
+			left: 18px;
+			right: 0;
+			bottom: 0;
+			height: 1px;
+			background: var(--theme-divider);
+		}
+		.public-section-heading,
+		.internal-section-heading {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: flex-start;
+			justify-content: space-between;
+			gap: 18px 28px;
+		}
+		.public-section-title-block,
+		.internal-section-title-block {
+			flex: 1 1 100%;
+			min-width: min(100%, 320px);
+			display: grid;
+			gap: 8px;
+		}
+		.public-section-kicker,
+		.internal-section-kicker {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 10px;
+			font-size: 11px;
+			font-weight: 700;
+			letter-spacing: 0.14em;
+			text-transform: uppercase;
+			color: var(--theme-text-soft);
+		}
+		.public-section-kicker-divider,
+		.internal-section-kicker-divider {
+			width: 18px;
+			height: 1px;
+			background: var(--theme-border-strong);
+		}
+		.public-section-title-row,
+		.internal-section-title-row {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 12px 14px;
+			width: 100%;
+		}
+		.public-section-title-row h2,
+		.internal-section-title-row h2 {
+			margin: 0;
+			font-size: clamp(1.9rem, 2.8vw, 2.7rem);
+			line-height: 1.02;
+			letter-spacing: -0.03em;
+		}
+		.public-section-header .status-indicator,
+		.internal-section-header .status-indicator {
+			margin-left: 0;
+			padding: 6px 11px;
+			border-radius: 999px;
+			font-size: 11px;
+			letter-spacing: 0.04em;
+			box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+		}
+		.public-section-sensor-line {
+			display: grid;
+			gap: 4px;
+		}
+		.internal-section-name-line {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: baseline;
+			gap: 8px 12px;
+		}
+		.public-section-sensor-label,
+		.public-section-details dt,
+		.internal-section-details dt {
+			font-size: 11px;
+			font-weight: 700;
+			letter-spacing: 0.12em;
+			text-transform: uppercase;
+			color: var(--theme-text-soft);
+		}
+		.public-section-sensor-name {
+			font-size: 1.15rem;
+			font-weight: 600;
+			line-height: 1.35;
+			color: var(--theme-text);
+		}
+		.internal-section-name-primary {
+			font-size: 1.1rem;
+			font-weight: 600;
+			line-height: 1.35;
+			color: var(--theme-text);
+		}
+		.internal-section-name-divider {
+			width: 18px;
+			height: 1px;
+			background: var(--theme-border-strong);
+			align-self: center;
+		}
+		.internal-section-name-secondary {
+			font-size: 14px;
+			font-weight: 500;
+			line-height: 1.45;
+			color: var(--theme-text-muted);
+		}
+		.public-section-links,
+		.internal-section-links {
+			flex: 0 1 auto;
+			justify-content: flex-end;
+			gap: 8px;
+			padding-top: 0;
+			margin-left: auto;
+		}
+		.public-section-links .device-link,
+		.internal-section-links .device-link {
+			display: inline-flex;
+			align-items: center;
+			gap: 7px;
+			padding: 7px 11px;
+			border-radius: 999px;
+			font-weight: 600;
+			letter-spacing: 0.01em;
+			white-space: nowrap;
+		}
+		.device-link-icon {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 16px;
+			height: 16px;
+			color: currentColor;
+		}
+		.device-link-icon svg {
+			display: block;
+			width: 16px;
+			height: 16px;
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 1.9;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+		}
+		html[data-theme="dark"] .public-section-links .device-link,
+		html[data-theme="dark"] .internal-section-links .device-link {
+			background: rgba(124, 199, 255, 0.1);
+			border-color: rgba(124, 199, 255, 0.18);
+			color: #9ed7ff;
+		}
+		html[data-theme="dark"] .public-section-links .device-link:hover,
+		html[data-theme="dark"] .internal-section-links .device-link:hover {
+			background: rgba(124, 199, 255, 0.17);
+			border-color: rgba(124, 199, 255, 0.28);
+		}
+		.public-section-details,
+		.internal-section-details {
+			margin: 0;
+			padding: 0;
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+			gap: 12px 18px;
+		}
+		.public-section-detail-item,
+		.internal-section-detail-item {
+			display: grid;
+			gap: 4px;
+			padding-top: 10px;
+			border-top: 1px solid var(--theme-divider);
+			min-width: 0;
+		}
+		.public-section-details dd,
+		.internal-section-details dd {
+			margin: 0;
+			font-size: 15px;
+			font-weight: 600;
+			line-height: 1.35;
+			color: var(--theme-text);
+			word-break: break-word;
+		}
+		.internal-section-detail-item-wide {
+			grid-column: span 2;
+		}
+		.internal-section-details .muted {
+			color: var(--theme-text-muted);
+		}
+		@media (max-width: 720px) {
+			.public-section-header,
+			.internal-section-header {
+				padding-left: 14px;
+			}
+			.public-section-header::after,
+			.internal-section-header::after {
+				left: 14px;
+			}
+			.public-section-title-row h2,
+			.internal-section-title-row h2 {
+				font-size: clamp(1.65rem, 8vw, 2.2rem);
+			}
+			.public-section-links,
+			.internal-section-links {
+				justify-content: flex-start;
+				flex-basis: 100%;
+				padding-top: 2px;
+			}
+			.public-section-details,
+			.internal-section-details {
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+			}
+			.internal-section-detail-item-wide {
+				grid-column: span 2;
+			}
+		}
+		@media (max-width: 520px) {
+			.public-section-details,
+			.internal-section-details {
+				grid-template-columns: 1fr;
+			}
+			.internal-section-detail-item-wide {
+				grid-column: span 1;
+			}
+			.internal-section-name-divider {
+				display: none;
+			}
+		}
+		/* Fix anchor scrolling position */
+		html { scroll-padding-top: 80px; }
+		
+		/* Summary box styles */
+		.summary-box { background: #e9ecef; border: 2px solid #6c757d; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+		.summary-counts { display: flex; gap: 15px; margin-top: 10px; }
+		.count-item { padding: 5px 10px; border-radius: 4px; font-weight: bold; color: white; }
+		
+		/* Widget container and error styles */
+		.widget-container { margin: 10px 0; clear: both; }
+		.oncWidget.widget-error { border: 2px solid #dc3545; background: #f8d7da; padding: 10px; margin: 5px 0; }
+		.oncWidget.widget-error::before { content: "⚠ Widget Loading Error"; display: block; color: #721c24; font-weight: bold; margin-bottom: 5px; }
+		.widget-error-indicator { background: #f8d7da; border: 1px solid #dc3545; padding: 5px; margin: 5px 0; border-radius: 4px; color: #721c24; font-size: 12px; }
+		.widget-empty-note { background: #f4f7fb; border: 1px solid #d5dee8; border-radius: 8px; padding: 12px 14px; color: #334e68; margin: 8px 0; }
+		.widget-empty-note strong { display: block; margin-bottom: 4px; font-size: 14px; }
+		.widget-empty-note p { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
+		.widget-empty-note-secondary { color: #607182; }
+		.widget-isolated {
+			position: relative;
+			isolation: isolate;
+		}
+		.data-preview-widget.theme_gallery:has(.oncBackdrop.active) {
+			z-index: 6000 !important;
+		}
+		.data-preview-widget.theme_gallery .oncBackdrop {
+			z-index: 5000 !important;
+		}
+		.data-preview-widget.theme_gallery .oncBackdrop.active {
+			box-sizing: border-box;
+			padding: 16px;
+		}
+		.data-preview-widget.theme_gallery .oncBackdrop.active img {
+			background-color: #ffffff !important;
+			box-sizing: border-box;
+			max-width: calc(100vw - 32px) !important;
+			max-height: calc(100vh - 32px) !important;
+			opacity: 1 !important;
+		}
+		@media (max-width: 640px) {
+			.data-preview-widget.theme_gallery .oncBackdrop.active {
+				padding: 8px;
+			}
+			.data-preview-widget.theme_gallery .oncBackdrop.active img {
+				max-width: calc(100vw - 16px) !important;
+				max-height: calc(100vh - 16px) !important;
+			}
+		}
+		body:has(.data-preview-widget.theme_gallery .oncBackdrop.active) .oncWidget.widget_archiveMap .ScrollBar {
+			visibility: hidden !important;
+		}
+		.archive-map-controls {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 8px 10px;
+			margin: 2px 0 10px;
+			padding: 8px 10px;
+			border: 1px solid var(--theme-divider, #d5dee8);
+			border-radius: 6px;
+			background: var(--theme-section-subtle, #f4f7fb);
+			color: var(--theme-text, #1f2a36);
+		}
+		.archive-map-days-label {
+			font-size: 12px;
+			font-weight: 700;
+			line-height: 1.2;
+			color: var(--theme-text, #1f2a36);
+		}
+		.archive-map-days-slider {
+			width: min(220px, 100%);
+			accent-color: #007973;
+		}
+		.archive-map-days-output {
+			min-width: 52px;
+			font-size: 12px;
+			font-weight: 700;
+			color: var(--theme-text, #4d5f72);
+		}
+		.archive-map-refresh-button {
+			border: 1px solid #007973;
+			border-radius: 5px;
+			background: #007973;
+			color: #fff;
+			padding: 5px 10px;
+			font-size: 12px;
+			font-weight: 700;
+			cursor: pointer;
+		}
+		.archive-map-refresh-button:hover:not(:disabled) {
+			background: #006863;
+		}
+		.archive-map-refresh-button:disabled {
+			cursor: wait;
+			opacity: 0.68;
+		}
+		.archive-map-refresh-status {
+			min-height: 16px;
+			font-size: 12px;
+			color: var(--theme-text-muted, #607182);
+		}
+		html[data-theme="dark"] .widgetWrap {
+			background: #0f1b29;
+			color: #dbe7f4;
+			border: 1px solid rgba(124, 199, 255, 0.16);
+			box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+		}
+		html[data-theme="dark"] .widgetWrap .oncWidget {
+			color: #dbe7f4;
+		}
+		html[data-theme="dark"] .oncWidget .contents,
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .contents {
+			background: #0b1420;
+			color: #dbe7f4;
+		}
+		html[data-theme="dark"] .archive-map-controls {
+			background: #111f2e;
+			border-color: rgba(124, 199, 255, 0.18);
+			color: #e8eef5;
+		}
+		html[data-theme="dark"] .archive-map-days-label,
+		html[data-theme="dark"] .archive-map-days-output {
+			color: #e8eef5;
+		}
+		html[data-theme="dark"] .archive-map-refresh-status {
+			color: #b8c7d8;
+		}
+		.oncWidget.widget_archiveMap .tooltip {
+			width: 230px;
+			padding: 12px 13px;
+			background: #ffffff;
+			color: #132033;
+			border: 1px solid #8ba0b7;
+			border-radius: 8px;
+			box-shadow: 0 14px 32px rgba(15, 23, 42, 0.28) !important;
+			line-height: 1.35;
+		}
+		.oncWidget.widget_archiveMap .tooltip .title {
+			color: #0b4e82;
+			font-size: 12px;
+			line-height: 1.3;
+			margin-bottom: 9px;
+		}
+		.oncWidget.widget_archiveMap .tooltip .label {
+			color: #53687e;
+		}
+		.oncWidget.widget_archiveMap .tooltip .value {
+			color: #172435;
+		}
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .tooltip {
+			background: #102033;
+			color: #eff6fc;
+			border-color: rgba(124, 199, 255, 0.58);
+			box-shadow: 0 18px 36px rgba(2, 6, 12, 0.62), 0 0 0 1px rgba(124, 199, 255, 0.12) !important;
+		}
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .tooltip .title {
+			color: #f8fbff;
+		}
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .tooltip .label {
+			color: #8ed1ff;
+		}
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .tooltip .value {
+			color: #e6f0fa;
+		}
+		.oncWidget.widget_archiveMap .ScrollBar {
+			height: 22px !important;
+			z-index: 20 !important;
+			border: 1px solid #8ca0b4 !important;
+			border-radius: 999px;
+			background: linear-gradient(to bottom, #dce5ee 0%, #cbd7e3 100%) !important;
+			box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.18) !important;
+			overflow: hidden;
+		}
+		.oncWidget.widget_archiveMap .ScrollBar .bar {
+			border: 1px solid #006863 !important;
+			border-radius: 999px;
+			background: linear-gradient(to bottom, #18a49d 0%, #007973 100%) !important;
+			box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 3px rgba(15, 23, 42, 0.22) !important;
+		}
+		.oncWidget.widget_archiveMap .ScrollBar .bar:hover {
+			border-color: #004f4b !important;
+			background: linear-gradient(to bottom, #25b8b1 0%, #008983 100%) !important;
+		}
+		.oncWidget.widget_archiveMap .ScrollBar .bar:active {
+			border-color: #003c39 !important;
+			background: linear-gradient(to bottom, #0f8e88 0%, #006863 100%) !important;
+		}
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .ScrollBar {
+			border-color: rgba(124, 199, 255, 0.48) !important;
+			background: linear-gradient(to bottom, #1b2d41 0%, #122234 100%) !important;
+			box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(124, 199, 255, 0.08) !important;
+		}
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .ScrollBar .bar {
+			border-color: #86e7ff !important;
+			background: linear-gradient(to bottom, #8feaff 0%, #32b7d8 100%) !important;
+			box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 12px rgba(50, 183, 216, 0.28) !important;
+		}
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .ScrollBar .bar:hover {
+			border-color: #c1f4ff !important;
+			background: linear-gradient(to bottom, #b7f3ff 0%, #4fc9e8 100%) !important;
+		}
+		html[data-theme="dark"] .oncWidget.widget_archiveMap .ScrollBar .bar:active {
+			border-color: #ffffff !important;
+			background: linear-gradient(to bottom, #66d6ee 0%, #2798b6 100%) !important;
+		}
+		@media (max-width: 640px) {
+			.archive-map-controls {
+				align-items: stretch;
+			}
+			.archive-map-days-slider {
+				flex: 1 1 170px;
+			}
+			.archive-map-refresh-button {
+				flex: 0 0 auto;
+			}
+			.archive-map-refresh-status {
+				flex-basis: 100%;
+			}
+		}
+		
+		/* JIRA Ticket styles */
+		.jira-ticket-card { background: #ffffff; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px; margin: 8px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.3s ease; }
+		.jira-ticket-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); border-color: #007bff; }
+		.jira-section {
+			margin-top: 28px;
+			padding-top: 18px;
+			border-top: 1px solid var(--theme-divider, rgba(112, 122, 136, 0.2));
+		}
+		.jira-section-header {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: baseline;
+			gap: 6px 12px;
+			margin-bottom: 14px;
+		}
+		.jira-section-title {
+			font-size: 15px;
+			font-weight: 700;
+			line-height: 1.2;
+			color: var(--theme-text, #1f2a36);
+		}
+		.jira-section-count {
+			font-size: 13px;
+			line-height: 1.35;
+			color: var(--theme-text-muted, #6c757d);
+		}
+		.jira-ticket-header { display: flex; align-items: center; margin-bottom: 8px; }
+		.jira-ticket-key { font-weight: bold; font-size: 14px; margin-right: 8px; text-decoration: none; color: #007bff; }
+		.jira-ticket-key:hover { text-decoration: underline; }
+		.jira-ticket-badges { margin-left: auto; display: flex; gap: 4px; }
+		.jira-badge { padding: 2px 6px; border-radius: 12px; color: white; font-weight: bold; font-size: 10px; }
+		.jira-ticket-title { font-size: 13px; color: #495057; margin-bottom: 6px; line-height: 1.4; }
+		.jira-ticket-meta { font-size: 11px; color: #6c757d; display: flex; justify-content: space-between; align-items: center; }
+		.jira-ticket-description { font-style: italic; color: #6c757d; font-size: 12px; margin-top: 6px; background: #f8f9fa; padding: 6px; border-radius: 4px; border-left: 3px solid #dee2e6; }
+		.jira-update-highlight { color: #17a2b8; font-weight: bold; }
+		.jira-ticket-list { margin-top: 6px; }
+		.jira-filter-bar {
+			background: #f1f3f5;
+			border: 1px solid #dee2e6;
+			padding: 10px 12px;
+			border-radius: 10px;
+			margin: 0 0 18px;
+			display: inline-flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 8px;
+		}
+		.jira-filter-bar input[type="number"] { width: 64px; margin: 0; }
+		.jira-show-older { background: #f8f9fa; border: 1px solid #ced4da; border-radius: 6px; padding: 6px 10px; cursor: pointer; margin: 6px 0; }
+		.jira-show-older:hover { background: #e9ecef; }
+
+		{% if show_issue_management or show_public_notifications|default(dashboard_variant == 'public', true) %}
+		.notifications-dropdown {
+			position: relative;
+		}
+		body.notifications-layer-open .top-bar {
+			z-index: 7000;
+		}
+		body.notifications-layer-open .notifications-dropdown.is-open {
+			z-index: 7010;
+		}
+		.notifications-toggle {
+			display: inline-flex;
+			align-items: center;
+			gap: 10px;
+			padding-right: 12px;
+		}
+		.notifications-toggle-icon {
+			font-size: 15px;
+			line-height: 1;
+		}
+		.notifications-toggle-label {
+			font-size: 13px;
+			font-weight: 700;
+		}
+		.notifications-count {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			min-width: 22px;
+			height: 22px;
+			padding: 0 7px;
+			border-radius: 999px;
+			background: #d93025;
+			color: #ffffff;
+			font-size: 11px;
+			font-weight: 700;
+			line-height: 1;
+		}
+		.notifications-count.is-empty {
+			background: rgba(122, 134, 146, 0.22);
+			color: var(--theme-button-text, #1f2a36);
+		}
+		.public-notifications-toggle {
+			position: relative;
+		}
+		.public-notifications-toggle.has-unseen {
+			border-color: color-mix(in srgb, var(--theme-accent, #007bff) 64%, var(--theme-border, #ccd4dd));
+			box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent-soft, #d7ecff) 56%, transparent);
+		}
+		.public-notifications-toggle.has-today::after {
+			content: "";
+			position: absolute;
+			top: 6px;
+			right: 8px;
+			width: 7px;
+			height: 7px;
+			border-radius: 50%;
+			background: #d93025;
+			box-shadow: 0 0 0 2px var(--theme-button-bg, #eef3f8);
+		}
+		.notifications-panel {
+			position: absolute;
+			right: 0;
+			top: calc(100% + 8px);
+			width: min(460px, calc(100vw - 32px));
+			max-height: min(70vh, 620px);
+			overflow: hidden;
+			border: 1px solid var(--theme-border, #ccd4dd);
+			border-radius: 18px;
+			background: var(--theme-surface-strong, #ffffff);
+			box-shadow: 0 24px 50px rgba(5, 16, 30, 0.22);
+			z-index: 7020;
+		}
+		.notifications-panel-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: flex-start;
+			gap: 16px;
+			padding: 16px 18px 12px;
+			border-bottom: 1px solid var(--theme-border-subtle, rgba(112, 122, 136, 0.18));
+		}
+		.notifications-panel-eyebrow {
+			margin: 0 0 4px;
+			font-size: 10px;
+			font-weight: 700;
+			letter-spacing: 0.12em;
+			text-transform: uppercase;
+			color: var(--theme-text-soft, #6c757d);
+		}
+		.notifications-panel-header h3 {
+			margin: 0;
+			font-size: 18px;
+			line-height: 1.2;
+			color: var(--theme-text, #1f2a36);
+		}
+		.notifications-list {
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			padding: 12px 14px 14px;
+			max-height: calc(min(70vh, 620px) - 92px);
+			overflow-y: auto;
+		}
+		.new-issue-item {
+			display: flex;
+			align-items: flex-start;
+			gap: 10px;
+			padding: 12px 12px 12px 14px;
+			border: 1px solid var(--theme-border-subtle, rgba(112, 122, 136, 0.18));
+			border-radius: 14px;
+			background: var(--theme-surface, #f6f8fb);
+		}
+		.issue-severity {
+			padding: 3px 8px;
+			border-radius: 4px;
+			color: white;
+			font-weight: bold;
+			font-size: 11px;
+			white-space: nowrap;
+			min-width: 70px;
+			text-align: center;
+		}
+		.issue-details {
+			display: flex;
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 6px;
+			flex-grow: 1;
+		}
+		.issue-location-link {
+			border: 0;
+			padding: 0;
+			background: transparent;
+			font-weight: 700;
+			color: var(--theme-accent, #007bff);
+			text-decoration: none;
+			font-family: monospace;
+			font-size: 14px;
+			cursor: pointer;
+		}
+		.issue-location-link:hover { text-decoration: underline; }
+		.issue-message { color: var(--theme-text-muted, #495057); font-size: 13px; line-height: 1.45; }
+		.issue-since { color: var(--theme-text-soft, #6c757d); font-size: 11px; }
+		.public-notifications-summary {
+			margin: 5px 0 0;
+			color: var(--theme-text-soft, #6c757d);
+			font-size: 12px;
+			line-height: 1.35;
+		}
+		.public-notification-today {
+			display: inline-flex;
+			align-items: center;
+			margin-right: 6px;
+			padding: 1px 6px;
+			border-radius: 999px;
+			background: color-mix(in srgb, var(--theme-accent-soft, #d7ecff) 80%, transparent);
+			color: var(--theme-accent, #006bb6);
+			font-weight: 700;
+		}
+		.public-notification-item.is-unseen {
+			background: color-mix(in srgb, var(--theme-accent-soft, #d7ecff) 38%, var(--theme-surface, #f6f8fb));
+		}
+		{% if show_issue_management %}
+		.dismiss-btn {
+			background: none;
+			border: 1px solid var(--theme-border, #ced4da);
+			border-radius: 999px;
+			cursor: pointer;
+			padding: 5px 9px;
+			color: var(--theme-text-soft, #6c757d);
+			font-size: 14px;
+		}
+		.dismiss-btn:hover { background: #f8d7da; color: #dc3545; border-color: #dc3545; }
+		.dismiss-all-btn {
+			background: var(--theme-surface, #eef3f8);
+			color: var(--theme-text, #1f2a36);
+			border: 1px solid var(--theme-border, #ced4da);
+			border-radius: 999px;
+			padding: 7px 12px;
+			cursor: pointer;
+			font-size: 12px;
+			font-weight: 600;
+		}
+		.dismiss-all-btn:hover { background: var(--theme-accent-soft, #e7edf4); }
+		{% endif %}
+		.notifications-empty-state {
+			padding: 16px 18px;
+			border: 1px dashed var(--theme-border, #ccd4dd);
+			border-radius: 14px;
+			background: var(--theme-surface, #f6f8fb);
+			color: var(--theme-text-muted, #495057);
+		}
+		.notifications-empty-state strong {
+			display: block;
+			margin-bottom: 5px;
+			color: var(--theme-text, #1f2a36);
+		}
+		.notifications-empty-state p {
+			margin: 0;
+			font-size: 13px;
+			line-height: 1.45;
+		}
+		{% endif %}
+
+		/* Header action buttons */
+		.top-bar-actions {
+			margin-left: auto;
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			flex-shrink: 0;
+		}
+		.top-bar-meta {
+			display: flex;
+			flex-direction: column;
+			align-items: flex-end;
+			gap: 6px;
+			min-width: 0;
+		}
+		.top-bar-status-strip {
+			display: flex;
+			align-items: center;
+			flex-wrap: wrap;
+			justify-content: flex-end;
+			gap: 8px 10px;
+			padding: 5px 12px;
+			border-radius: 999px;
+			background: rgba(255, 255, 255, 0.2);
+			border: 1px solid rgba(255, 255, 255, 0.35);
+			max-width: 100%;
+		}
+		.top-bar-status-item {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			min-width: 0;
+			white-space: nowrap;
+		}
+		.top-bar-status-label {
+			font-size: 10px;
+			font-weight: 700;
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+			color: rgba(255, 255, 255, 0.66);
+		}
+		.top-bar-status-separator {
+			width: 1px;
+			height: 14px;
+			background: rgba(255, 255, 255, 0.22);
+			flex: 0 0 auto;
+		}
+		.auto-refresh-status,
+		.last-updated-indicator {
+			font-size: 11px;
+			font-weight: 600;
+			color: rgba(255, 255, 255, 0.94);
+			white-space: nowrap;
+		}
+			.last-updated-indicator.updating {
+				color: rgba(255, 244, 196, 0.98);
+			}
+			.refresh-progress-indicator {
+				font-size: 11px;
+				padding: 4px 8px;
+				border-radius: 999px;
+				white-space: nowrap;
+				max-width: 520px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				align-self: flex-end;
+			}
+			.refresh-progress-indicator.active {
+				background: rgba(255, 193, 7, 0.28);
+				border-color: rgba(255, 225, 133, 0.85);
+			}
+			.refresh-progress-indicator.error {
+				background: rgba(220, 53, 69, 0.28);
+				border-color: rgba(255, 187, 196, 0.85);
+			}
+		.actions-dropdown {
+			position: relative;
+		}
+		.actions-btn {
+			padding: 8px 16px;
+			background-color: #e9ecef;
+			color: #1f2a36;
+			border: 1px solid #b8c2cc;
+			border-radius: 6px;
+			cursor: pointer;
+			font-size: 13px;
+			font-weight: 600;
+		}
+		.actions-btn:hover {
+			background-color: #dfe5ea;
+		}
+		.actions-menu {
+			position: absolute;
+			right: 0;
+			top: calc(100% + 6px);
+			min-width: 240px;
+			background: #ffffff;
+			border: 1px solid #b7c1cb;
+			border-radius: 8px;
+			box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+			padding: 6px;
+			z-index: 130;
+		}
+		.action-menu-item {
+			display: block;
+			width: 100%;
+			text-align: left;
+			border: 1px solid transparent;
+			background: #ffffff;
+			color: #1f2a36;
+			padding: 8px 10px;
+			border-radius: 6px;
+			font-size: 13px;
+			cursor: pointer;
+		}
+		.action-menu-item:hover {
+			background: #edf3f8;
+			border-color: #c6d3df;
+		}
+		.action-menu-item.refreshing {
+			background: #fff3cd;
+			border-color: #ffe08a;
+			color: #6c4b00;
+			cursor: default;
+		}
+		.action-menu-item.launching {
+			background: #fff3cd;
+			border-color: #ffe08a;
+			color: #6c4b00;
+			cursor: default;
+		}
+		.refresh-status-btn {
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+		}
+		.action-menu-item.refresh-status-btn {
+			display: flex;
+			align-items: center;
+			justify-content: flex-start;
+			gap: 8px;
+		}
+		.refresh-button-label {
+			min-width: 0;
+		}
+		.refresh-button-caret {
+			opacity: 0.78;
+			font-size: 12px;
+			flex: 0 0 auto;
+		}
+		.refresh-progress-circle {
+			--refresh-progress: 0;
+			width: 18px;
+			height: 18px;
+			flex: 0 0 18px;
+			display: inline-block;
+			overflow: visible;
+		}
+		.refresh-progress-track,
+		.refresh-progress-fill {
+			fill: none;
+			stroke-width: 2.5;
+		}
+		.refresh-progress-track {
+			stroke: currentColor;
+			opacity: 0.18;
+		}
+		.refresh-progress-fill {
+			stroke: currentColor;
+			stroke-linecap: round;
+			stroke-dasharray: 50.27;
+			stroke-dashoffset: calc(50.27 - (50.27 * var(--refresh-progress) / 100));
+			transform: rotate(-90deg);
+			transform-origin: 50% 50%;
+			transition: stroke-dashoffset 0.22s ease, opacity 0.2s ease;
+			opacity: 0;
+		}
+		.refresh-status-btn[data-refresh-state="running"] .refresh-progress-fill,
+		.refresh-status-btn[data-refresh-state="complete"] .refresh-progress-fill,
+		.refresh-status-btn[data-refresh-state="error"] .refresh-progress-fill {
+			opacity: 1;
+		}
+		.refresh-status-btn[data-refresh-state="complete"] .refresh-progress-fill {
+			stroke: #3ad29f;
+		}
+		.refresh-status-btn[data-refresh-state="error"] .refresh-progress-fill {
+			stroke: #ff8f99;
+		}
+		.actions-btn.refreshing {
+			background: #7c5d00;
+			border-color: #ffe08a;
+			color: #fff4cf;
+		}
+		.settings-btn {
+			padding: 8px 12px;
+			background-color: #334e68;
+			color: white;
+			border: none;
+			border-radius: 5px;
+			font-size: 13px;
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			white-space: nowrap;
+			cursor: pointer;
+		}
+		.settings-btn:hover { background-color: #243b53; }
+		.settings-btn[disabled] {
+			opacity: 0.72;
+			cursor: not-allowed;
+		}
+		.settings-btn.refreshing {
+			background-color: #7c5d00;
+		}
+
+		/* Cache modal */
+		.cache-modal {
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			background: rgba(0, 0, 0, 0.4);
+			z-index: 2000;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+		.cache-modal-content {
+			background: #fff;
+			border-radius: 10px;
+			width: 420px;
+			max-width: calc(100% - 40px);
+			box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+		}
+		.cache-modal-content.cache-modal-wide {
+			width: 860px;
+		}
+		.cache-modal-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 14px 16px;
+			border-bottom: 1px solid #e9ecef;
+		}
+		.cache-modal-header h3 {
+			margin: 0;
+			font-size: 16px;
+		}
+		.cache-modal-close {
+			background: none;
+			border: none;
+			font-size: 20px;
+			cursor: pointer;
+			color: #6c757d;
+		}
+		.cache-modal-body {
+			padding: 16px;
+		}
+		.cache-modal-grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 28px;
+		}
+		.cache-modal-section + .cache-modal-section {
+			border-left: 1px solid #e9ecef;
+			padding-left: 20px;
+		}
+		.cache-modal-section h4 {
+			margin: 0 0 10px 0;
+			font-size: 14px;
+			color: #343a40;
+		}
+		.cache-label {
+			font-size: 12px;
+			color: #6c757d;
+			margin-top: 10px;
+			display: block;
+		}
+		.cache-input, .cache-textarea, .cache-modal-section select {
+			width: 100%;
+			border: 1px solid #ced4da;
+			border-radius: 6px;
+			padding: 6px 8px;
+			font-size: 13px;
+			margin-top: 4px;
+		}
+		.cache-textarea {
+			font-family: monospace;
+		}
+		.cache-checkbox-row {
+			display: flex;
+			gap: 12px;
+			margin-top: 10px;
+			font-size: 12px;
+			color: #495057;
+		}
+		.cache-modal-actions {
+			margin-top: 12px;
+			display: flex;
+			gap: 8px;
+		}
+		.cache-btn {
+			border: none;
+			border-radius: 5px;
+			padding: 6px 12px;
+			font-size: 12px;
+			cursor: pointer;
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+		}
+		.cache-btn[disabled] {
+			opacity: 0.6;
+			cursor: default;
+		}
+		.cache-btn-spinner {
+			width: 12px;
+			height: 12px;
+			border: 2px solid rgba(255, 255, 255, 0.4);
+			border-top-color: #fff;
+			border-radius: 50%;
+			display: none;
+			animation: cache-spin 0.8s linear infinite;
+		}
+		.cache-btn.loading .cache-btn-spinner {
+			display: inline-block;
+		}
+		.cache-btn.loading .cache-btn-text {
+			opacity: 0.9;
+		}
+		@keyframes cache-spin {
+			from { transform: rotate(0deg); }
+			to { transform: rotate(360deg); }
+		}
+		.cache-btn-primary { background: #007bff; color: #fff; }
+		.cache-btn-success { background: #28a745; color: #fff; }
+		.cache-btn-light { background: #f1f3f5; color: #495057; }
+		.cache-analysis-summary {
+			font-size: 12px;
+			color: #495057;
+			background: #f8f9fa;
+			border-radius: 6px;
+			padding: 8px;
+			margin-bottom: 10px;
+		}
+		.cache-label-actions {
+			display: flex;
+			gap: 6px;
+			margin-bottom: 8px;
+		}
+		.cache-label-list {
+			max-height: 260px;
+			overflow-y: auto;
+			border: 1px solid #e9ecef;
+			border-radius: 6px;
+			padding: 6px;
+			font-size: 12px;
+		}
+		.cache-label-item {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 4px 2px;
+			border-bottom: 1px dashed #e9ecef;
+		}
+		.cache-label-item--nested {
+			padding-left: 12px;
+		}
+		.cache-label-item:last-child { border-bottom: none; }
+		.cache-label-name { font-family: monospace; font-size: 11px; }
+		.cache-label-count { color: #6c757d; font-size: 11px; }
+		.cache-device-group {
+			border: 1px solid #eef1f4;
+			border-radius: 6px;
+			padding: 6px;
+			margin-bottom: 8px;
+			background: #fff;
+		}
+		.cache-device-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			font-weight: 600;
+			margin-bottom: 4px;
+		}
+		.cache-device-name { font-size: 12px; }
+		.cache-device-labels { margin-left: 4px; }
+		.cache-progress-block {
+			margin-top: 12px;
+		}
+		.cache-modal-message {
+			font-size: 13px;
+			color: #495057;
+			margin-bottom: 12px;
+		}
+		.cache-progress {
+			width: 100%;
+			height: 10px;
+			background: #e9ecef;
+			border-radius: 999px;
+			overflow: hidden;
+			margin-bottom: 10px;
+		}
+		.cache-progress-bar {
+			height: 100%;
+			background: #17a2b8;
+			width: 0%;
+			transition: width 0.2s ease;
+		}
+		.cache-progress-text {
+			font-size: 12px;
+			color: #6c757d;
+			text-align: right;
+		}
+		.settings-modal-content {
+			width: 620px;
+			max-width: calc(100% - 40px);
+			height: min(760px, calc(100vh - 32px));
+			display: flex;
+			flex-direction: column;
+		}
+		.settings-modal-body {
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			flex: 1 1 auto;
+			min-height: 0;
+		}
+		.settings-scroll-area {
+			flex: 1 1 auto;
+			min-height: 0;
+			overflow-y: auto;
+			padding-right: 4px;
+		}
+		.settings-scroll-area::-webkit-scrollbar {
+			width: 8px;
+		}
+		.settings-scroll-area::-webkit-scrollbar-thumb {
+			background: #c7d3df;
+			border-radius: 8px;
+		}
+		.settings-note {
+			margin: 0;
+			font-size: 12px;
+			color: #445566;
+			background: #eef3f8;
+			border: 1px solid #d1dbe6;
+			border-radius: 6px;
+			padding: 8px 10px;
+		}
+		.settings-scheduler-summary {
+			font-size: 12px;
+			color: #273444;
+			background: #f2f7fb;
+			border: 1px solid #c9d8e6;
+			border-radius: 6px;
+			padding: 10px;
+			margin-bottom: 0;
+		}
+		.settings-category-bar {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			margin-bottom: 12px;
+		}
+		.settings-category-btn {
+			border: 1px solid #aab8c5;
+			background: #f3f6f9;
+			color: #263849;
+			border-radius: 999px;
+			padding: 6px 12px;
+			font-size: 12px;
+			font-weight: 600;
+			cursor: pointer;
+		}
+		.settings-category-btn:hover {
+			background: #e9eff5;
+		}
+		.settings-category-btn.active {
+			background: #334e68;
+			border-color: #243b53;
+			color: #ffffff;
+		}
+		.settings-form {
+			display: grid;
+			grid-template-columns: 1fr;
+			gap: 10px;
+		}
+		.settings-field {
+			border: 1px solid #bcc7d3;
+			border-radius: 6px;
+			padding: 10px;
+			background: #fdfefe;
+			overflow: hidden;
+		}
+		.settings-field label {
+			display: block;
+			font-size: 13px;
+			font-weight: 600;
+			color: #253443;
+		}
+		.settings-field small {
+			display: block;
+			margin-top: 4px;
+			font-size: 11px;
+			color: #4f6274;
+			line-height: 1.35;
+		}
+		.settings-field .settings-source {
+			margin-top: 6px;
+			font-size: 10px;
+			color: #66798a;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.settings-field input[type="text"],
+		.settings-field input[type="number"],
+		.settings-field input[type="time"],
+		.settings-field select {
+			margin-top: 8px;
+			width: 100%;
+			max-width: 100%;
+			min-width: 0;
+			border: 1px solid #aebccb;
+			border-radius: 6px;
+			padding: 6px 8px;
+			font-size: 13px;
+			background: #ffffff;
+			color: #22313f;
+			display: block;
+			box-sizing: border-box;
+		}
+		.settings-field input:focus,
+		.settings-field select:focus {
+			outline: none;
+			border-color: #3b82c4;
+			box-shadow: 0 0 0 2px rgba(59, 130, 196, 0.16);
+		}
+		.settings-field .settings-checkbox-row {
+			margin-top: 8px;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			font-size: 13px;
+		}
+		.settings-field.settings-cli-locked {
+			border-color: #d1ecf1;
+			background: #f1f8fb;
+		}
+		.settings-field.settings-cli-locked label::after {
+			content: " (CLI override active)";
+			font-weight: 500;
+			font-size: 11px;
+			color: #117a8b;
+		}
+		.settings-empty {
+			font-size: 12px;
+			color: #607182;
+			background: #f4f7fa;
+			border: 1px dashed #c2ccd7;
+			border-radius: 6px;
+			padding: 10px;
+		}
+		.settings-modal-body .cache-modal-actions {
+			margin-top: 0;
+			flex-shrink: 0;
+		}
+
+		/* Theme + navigation refresh */
+		html,
+		body {
+			background: var(--theme-bg);
+			color: var(--theme-text);
+		}
+
+		body.dashboard-shell,
+		body.public-detail-body {
+			font-family: var(--font-sans);
+			color: var(--theme-text);
+			background:
+				radial-gradient(circle at top right, rgba(14, 106, 168, 0.1), transparent 28%),
+				linear-gradient(180deg, rgba(255, 255, 255, 0.38), transparent 180px),
+				var(--theme-bg);
+			transition: background-color 0.24s ease, color 0.24s ease;
+		}
+
+		html[data-theme="dark"] body.dashboard-shell,
+		html[data-theme="dark"] body.public-detail-body {
+			background:
+				radial-gradient(circle at top right, rgba(124, 199, 255, 0.08), transparent 30%),
+				linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 180px),
+				var(--theme-bg);
+		}
+
+		body.dashboard-shell {
+			margin-left: 336px;
+			padding: 86px 28px 28px;
+		}
+
+		body.public-detail-body {
+			padding: 24px;
+		}
+
+		a {
+			color: var(--theme-accent);
+		}
+
+		.top-bar {
+			height: 62px;
+			background: linear-gradient(135deg, var(--theme-topbar-start), var(--theme-topbar-end));
+			border-bottom: 1px solid var(--theme-topbar-border);
+			box-shadow: 0 14px 30px rgba(5, 16, 30, 0.18);
+			backdrop-filter: blur(16px);
+		}
+
+		.top-bar h1 {
+			letter-spacing: -0.02em;
+			font-weight: 700;
+		}
+
+		.top-bar-meta {
+			gap: 6px;
+		}
+
+		.top-bar-status-strip,
+		.refresh-progress-indicator {
+			background: var(--theme-topbar-chip);
+			border-color: var(--theme-topbar-chip-border);
+			color: rgba(255, 255, 255, 0.92);
+		}
+
+		.top-bar-status-separator {
+			background: var(--theme-topbar-chip-border);
+		}
+
+		.top-bar-status-label {
+			color: rgba(255, 255, 255, 0.64);
+		}
+
+		.auto-refresh-status,
+		.last-updated-indicator {
+			color: rgba(255, 255, 255, 0.94);
+		}
+
+		.actions-btn,
+		.settings-btn,
+		.theme-toggle-btn {
+			border-radius: 999px;
+			font-weight: 600;
+			letter-spacing: 0.01em;
+			transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+		}
+
+		.actions-btn,
+		.settings-btn,
+		.theme-toggle-btn {
+			background: var(--theme-button-surface);
+			color: var(--theme-button-text);
+			border: 1px solid var(--theme-topbar-chip-border);
+		}
+
+		.actions-btn:hover,
+		.settings-btn:hover,
+		.theme-toggle-btn:hover {
+			background: var(--theme-button-surface-hover);
+			transform: translateY(-1px);
+		}
+
+		.theme-toggle-btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 44px;
+			height: 44px;
+			padding: 0;
+			cursor: pointer;
+			white-space: nowrap;
+		}
+
+		.theme-toggle-icon {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 20px;
+			height: 20px;
+			font-size: 16px;
+			line-height: 1;
+		}
+
+		.actions-menu,
+		.cache-modal-content,
+		.settings-modal-content,
+		.summary-box,
+		.status-legend,
+		.data-status-summary,
+		.notifications-panel,
+		.new-issue-item,
+		.jira-ticket-card,
+		.settings-field,
+		.settings-empty,
+		.settings-note,
+		.settings-scheduler-summary,
+		.cache-analysis-summary,
+		.cache-device-group,
+		.cache-label-list,
+		.detail-tab-panels {
+			background: var(--theme-surface-strong);
+			color: var(--theme-text);
+			border-color: var(--theme-border);
+			box-shadow: var(--theme-shadow-soft);
+		}
+
+		.status-legend {
+			background: var(--theme-legend-bg);
+			border: 1px solid var(--theme-summary-border);
+		}
+
+		.summary-box {
+			background: var(--theme-summary-bg);
+			border-color: var(--theme-summary-border);
+		}
+
+		.jira-ticket-title,
+		.jira-ticket-meta,
+		.jira-ticket-description,
+		.issue-message,
+		.settings-field small,
+		.settings-empty,
+		.settings-note,
+		.settings-scheduler-summary,
+		.cache-analysis-summary,
+		.cache-modal-message,
+		.cache-progress-text {
+			color: var(--theme-text-muted);
+		}
+
+		.jira-ticket-title,
+		.jira-filter-bar,
+		.jira-filter-bar span {
+			color: var(--theme-text);
+		}
+
+		.jira-filter-bar {
+			background: var(--theme-surface-muted);
+			border-color: var(--theme-border);
+		}
+
+		.jira-filter-bar button {
+			background: var(--theme-surface);
+			border: 1px solid var(--theme-border);
+			border-radius: 8px;
+			color: var(--theme-text);
+			padding: 5px 10px;
+			cursor: pointer;
+			transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+		}
+
+		.jira-filter-bar button:hover {
+			background: var(--theme-accent-soft);
+			border-color: var(--theme-border-strong);
+		}
+
+		.jira-ticket-description {
+			background: transparent;
+			border-left-color: var(--theme-border-strong);
+			padding: 6px 0 6px 10px;
+		}
+
+		.cache-modal-header,
+		.cache-device-group,
+		.cache-label-item,
+		.settings-field,
+		.new-issue-item {
+			border-color: var(--theme-border);
+		}
+
+		.settings-category-btn,
+		.cache-btn-light {
+			background: var(--theme-surface-muted);
+			border-color: var(--theme-border);
+			color: var(--theme-text);
+		}
+
+		.settings-category-btn:hover,
+		.cache-btn-light:hover {
+			background: var(--theme-accent-soft);
+		}
+
+		.settings-category-btn.active {
+			background: var(--theme-accent);
+			border-color: var(--theme-accent);
+		}
+
+		.settings-field input[type="text"],
+		.settings-field input[type="number"],
+		.settings-field input[type="time"],
+		.settings-field select,
+		.cache-input,
+		.cache-textarea,
+		.cache-modal-section select,
+		.jira-filter-bar input[type="number"] {
+			background: var(--theme-surface);
+			border-color: var(--theme-border-strong);
+			color: var(--theme-text);
+		}
+
+		.dashboard-tab-bar {
+			border-bottom-color: var(--theme-divider);
+		}
+
+		.dashboard-tab-button {
+			background: var(--theme-surface-muted);
+			border-color: var(--theme-border);
+			color: var(--theme-text-muted);
+			border-radius: 999px;
+			padding: 8px 14px;
+		}
+
+		.dashboard-tab-button:hover {
+			background: var(--theme-accent-soft);
+			color: var(--theme-text);
+		}
+
+		.dashboard-tab-button.active {
+			background: var(--theme-accent);
+			border-color: var(--theme-accent);
+		}
+
+		.sidenav {
+			top: 70px;
+			width: 308px;
+			height: calc(100vh - 86px);
+			background: var(--theme-sidebar-bg);
+			border: 1px solid var(--theme-border);
+			border-radius: 24px;
+			margin: 0 0 16px 16px;
+			box-shadow: var(--theme-shadow);
+			backdrop-filter: blur(16px);
+		}
+
+		.sidenav h2 {
+			padding: 0;
+			border: 0;
+			background: transparent;
+			box-shadow: none;
+			color: var(--theme-text);
+			font-size: 21px;
+			letter-spacing: -0.03em;
+		}
+
+		.sidebar-header {
+			position: sticky;
+			top: 0;
+			z-index: 3;
+			padding: 18px 18px 14px;
+			background: linear-gradient(180deg, var(--theme-sidebar-strong), rgba(255, 255, 255, 0));
+			backdrop-filter: blur(12px);
+		}
+
+		html[data-theme="dark"] .sidebar-header {
+			background: linear-gradient(180deg, rgba(19, 32, 48, 0.98), rgba(19, 32, 48, 0.72), rgba(19, 32, 48, 0));
+		}
+
+		.sidebar-eyebrow {
+			margin: 0 0 6px;
+			font-size: 11px;
+			font-weight: 700;
+			letter-spacing: 0.16em;
+			text-transform: uppercase;
+			color: var(--theme-accent);
+		}
+
+		.sidebar-description {
+			margin: 8px 0 0;
+			font-size: 12px;
+			line-height: 1.45;
+			color: var(--theme-text-muted);
+		}
+
+		.nav-container {
+			padding: 6px 14px 18px;
+		}
+
+		details.nav-group-card {
+			margin: 0 0 10px;
+			background: transparent;
+			border: 0;
+			border-radius: 16px;
+			overflow: visible;
+		}
+
+		summary.nav-group-header {
+			padding: 12px 12px 12px 14px;
+			border-radius: 16px;
+			background: transparent;
+			border: 1px solid transparent;
+			gap: 12px;
+			align-items: flex-start;
+		}
+
+		summary.nav-group-header:hover,
+		details.nav-group-card[open] summary.nav-group-header {
+			background: var(--theme-surface-muted);
+			border-color: var(--theme-border);
+		}
+
+		.group-header-main {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+
+		.group-name {
+			font-size: 15px;
+			font-weight: 700;
+			color: var(--theme-text);
+			letter-spacing: -0.02em;
+		}
+
+		.group-count,
+		.site-count {
+			display: inline-flex;
+			align-items: center;
+			width: fit-content;
+			padding: 2px 8px;
+			border-radius: 999px;
+			background: var(--theme-surface-strong);
+			border: 1px solid var(--theme-border);
+			color: var(--theme-text-soft);
+			font-size: 11px;
+			font-weight: 600;
+			letter-spacing: 0.02em;
+			text-transform: uppercase;
+		}
+
+		.group-status-icons {
+			flex: 0 1 118px;
+			max-width: 118px;
+			padding-top: 3px;
+			gap: 4px;
+		}
+
+		.status-dot-small {
+			font-size: 11px;
+		}
+
+		.nav-sub-items {
+			padding: 10px 0 2px 14px;
+			margin: 4px 0 0 10px;
+			border-left: 1px solid var(--theme-divider);
+			background: transparent;
+		}
+
+		.nav-site-group {
+			margin: 0 0 6px;
+			border: 0;
+			border-radius: 14px;
+			background: transparent;
+		}
+
+		details.nav-site-card {
+			margin-bottom: 6px;
+			border-radius: 14px;
+		}
+
+		.site-link {
+			padding: 10px 10px 10px 14px;
+			border: 1px solid transparent;
+			border-radius: 14px;
+			background: transparent;
+			color: var(--theme-text);
+			gap: 10px;
+		}
+
+		.site-link:hover,
+		details.nav-site-card[open] > summary.site-link {
+			background: var(--theme-surface-muted);
+			border-color: var(--theme-border);
+			color: var(--theme-text);
+		}
+
+		.site-header-main,
+		.site-info {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+			flex-grow: 1;
+			min-width: 0;
+		}
+
+		.site-name {
+			font-size: 14px;
+			font-weight: 700;
+			letter-spacing: -0.02em;
+			color: var(--theme-text);
+		}
+
+		.site-meta-row {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px;
+			align-items: center;
+		}
+
+		.site-meta,
+		.site-code,
+		.sensor-meta,
+		.sensor-code {
+			font-family: var(--font-mono);
+			font-size: 11px;
+			letter-spacing: 0.03em;
+			text-transform: uppercase;
+			color: var(--theme-text-soft);
+		}
+
+		.nav-site-sensors {
+			padding: 4px 0 8px 10px;
+			margin: 0 0 0 12px;
+			border-left: 1px dashed var(--theme-divider);
+			background: transparent;
+		}
+
+		.sensor-link {
+			padding: 9px 10px 9px 12px;
+			border: 1px solid transparent;
+			border-radius: 12px;
+			background: transparent;
+			color: var(--theme-text-muted);
+			gap: 10px;
+			margin-bottom: 2px;
+		}
+
+		.sensor-link:first-of-type {
+			border-top: 1px solid transparent;
+		}
+
+		.sensor-link:hover {
+			background: var(--theme-surface-muted);
+			border-color: var(--theme-border);
+			color: var(--theme-text);
+		}
+
+		.sensor-copy {
+			display: flex;
+			flex-direction: column;
+			gap: 3px;
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+
+		.sensor-name {
+			color: inherit;
+			font-size: 13px;
+			line-height: 1.35;
+		}
+
+		.status-indicator-dot {
+			font-size: 14px;
+			width: 16px;
+			text-align: center;
+		}
+
+		.sidebar-map-target.sidebar-map-active {
+			background: var(--theme-accent-soft);
+			border-color: rgba(11, 106, 168, 0.25);
+			box-shadow: inset 3px 0 0 var(--theme-accent);
+			outline: none;
+		}
+
+			html[data-theme="dark"] .sidebar-map-target.sidebar-map-active {
+				border-color: rgba(124, 199, 255, 0.32);
+			}
+
+			html[data-theme="dark"] .sidebar-map-target:hover,
+			html[data-theme="dark"] .sensor-link:hover {
+				background: rgba(124, 199, 255, 0.12);
+				border-color: rgba(124, 199, 255, 0.3);
+				box-shadow: inset 3px 0 0 rgba(124, 199, 255, 0.55);
+				color: var(--theme-text);
+			}
+
+			html[data-theme="dark"] .sidebar-map-target:hover .sensor-meta,
+			html[data-theme="dark"] .sidebar-map-target.sidebar-map-active .sensor-meta {
+				color: #c2d4e6;
+			}
+
+			.sidenav a.sidebar-map-target:hover > span,
+			.sidenav a.sidebar-map-target.sidebar-map-active > span {
+				background: transparent !important;
+			}
+
+			.sidenav::-webkit-scrollbar-track {
+				background: transparent;
+			}
+
+		.sidenav::-webkit-scrollbar-thumb {
+			background: var(--theme-border-strong);
+		}
+
+		.public-detail-main {
+			max-width: 1280px;
+		}
+
+		.main,
+		.section-header,
+		.section-subheader,
+		.section-metadata-grid,
+		.mapping-names,
+		.device-links,
+		.section,
+		.widget-empty-note {
+			color: var(--theme-text);
+		}
+
+		.widget-empty-note {
+			background: var(--theme-surface-strong);
+			border-color: var(--theme-border);
+		}
+
+		.device-link,
+		.jira-show-older {
+			background: var(--theme-surface-muted);
+			border-color: var(--theme-border);
+			color: var(--theme-accent);
+		}
+
+		.device-link:hover,
+		.jira-show-older:hover {
+			background: var(--theme-accent-soft);
+		}
+
+		@media (max-width: 1160px) {
+			.sidenav {
+				width: 284px;
+			}
+
+			body.dashboard-shell {
+				margin-left: 308px;
+				padding-left: 20px;
+				padding-right: 20px;
+			}
+		}
+
+		@media (max-width: 780px) {
+			body.dashboard-shell {
+				margin-left: 0;
+				padding: 88px 14px 18px;
+			}
+
+			body.public-detail-body {
+				padding: 18px 14px;
+			}
+
+			.top-bar {
+				height: auto;
+				min-height: 62px;
+				padding: 10px 14px;
+				align-items: flex-start;
+				gap: 10px;
+			}
+
+			.top-bar-actions {
+				width: 100%;
+				justify-content: flex-end;
+				flex-wrap: wrap;
+			}
+
+			.theme-toggle-btn,
+			.settings-btn,
+			.actions-btn {
+				padding: 8px 11px;
+			}
+
+			.notifications-panel {
+				right: -6px;
+				width: min(420px, calc(100vw - 20px));
+			}
+
+			.sidenav {
+				position: static;
+				width: auto;
+				height: auto;
+				margin: 0 0 18px;
+				border-radius: 20px;
+			}
+
+			.sidebar-header {
+				position: static;
+			}
+		}
+		@media (max-width: 900px) {
+			.cache-modal-content.cache-modal-wide {
+				width: 96%;
+			}
+			.cache-modal-grid {
+				grid-template-columns: 1fr;
+			}
+			.cache-modal-section + .cache-modal-section {
+				border-left: none;
+				padding-left: 0;
+			}
+			.top-bar-meta {
+				display: none;
+			}
+			.settings-modal-content {
+				height: calc(100vh - 24px);
+				max-width: calc(100% - 16px);
+			}
+		}
+	</style>
+	<script>
+	window.applyJiraFilter = function(){ try { const input = document.getElementById("jira_days_filter"); if(!input) return; const n = parseInt(input.value||"",10); const cards = document.querySelectorAll(".jira-ticket-card"); let shown=0,total=0; cards.forEach(function(card){ total++; const v = parseInt(card.getAttribute("data-updated-days")||"9999", 10); if (isNaN(n) || v <= n) { card.style.display = ""; shown++; } else { card.style.display = "none"; } }); const counter = document.getElementById("jira_filter_count"); if(counter) counter.textContent = " (showing "+shown+"/"+total+")"; } catch(e){} };
+
+	function _formatIsoDateTime(value) {
+		if (!value) return 'n/a';
+		var dt = new Date(value);
+		if (isNaN(dt.getTime())) return value;
+		return dt.toLocaleString();
+	}
+
+	function _formatTopBarDateTime(value) {
+		if (!value) return 'n/a';
+		var dt = new Date(value);
+		if (isNaN(dt.getTime())) return value;
+		var now = new Date();
+		var options = {
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit'
+		};
+		if (dt.getFullYear() !== now.getFullYear()) {
+			options.year = 'numeric';
+		}
+		return dt.toLocaleString([], options);
+	}
+
+		function _isoToMs(value) {
+			if (!value) return NaN;
+			var ms = Date.parse(value);
+			return isNaN(ms) ? NaN : ms;
+		}
+
+	function _sourceText(source) {
+		if (source === 'cli') return 'CLI override';
+		if (source === 'saved') return 'Saved dashboard setting';
+		if (source === 'env') return '.env default';
+		return 'Built-in default';
+	}
+
+	var SETTINGS_CATEGORY_LABELS = {
+		schedule: 'Schedule',
+		monitoring: 'Monitoring',
+		jira: 'JIRA'
+	};
+	var COMMON_TIMEZONES = [
+		'UTC',
+		'America/Vancouver',
+		'America/Los_Angeles',
+		'America/Edmonton',
+		'America/Denver',
+		'America/Winnipeg',
+		'America/Chicago',
+		'America/Toronto',
+		'America/New_York',
+		'America/Halifax',
+		'America/St_Johns',
+		'Europe/London'
+	];
+		var DASHBOARD_URL_PREFIX = {{ dashboard_url_prefix|default('', true)|tojson }};
+		var VERIFICATION_TOOLS_ENABLED = {{ show_verification_tools|default(false, true)|tojson }};
+		var activeSettingsCategory = null;
+		var currentSettingsPayload = null;
+		var settingsDraftValues = {};
+		var refreshProgressHideTimer = null;
+	var runtimeStatusPollTimer = null;
+	var publicRefreshPollTimer = null;
+	var manualRefreshInProgress = false;
+	var manualRefreshProgressPct = 0;
+	var manualRefreshProgressMessage = '';
+	var scheduledReloadTimer = null;
+	var lastProcessedRefreshFinishedAt = null;
+	var THEME_STORAGE_KEY = 'hydrophoneDashboardTheme';
+	var ACTIVE_THEME = document.documentElement.getAttribute('data-theme') || 'light';
+
+	function buildDashboardUrl(path) {
+		var cleanPath = String(path || '');
+		if (!cleanPath) {
+			return DASHBOARD_URL_PREFIX || '/';
+		}
+		if (cleanPath.charAt(0) !== '/') {
+			cleanPath = '/' + cleanPath;
+		}
+		return (DASHBOARD_URL_PREFIX || '') + cleanPath;
+	}
+
+	function isPublicDashboardPage() {
+		var body = document.body;
+		return !!(body && body.getAttribute('data-dashboard-variant') === 'public');
+	}
+
+	function isPublicDetailPage() {
+		var body = document.body;
+		return !!(body && body.getAttribute('data-dashboard-variant') === 'public-detail');
+	}
+
+	function _formatDurationShort(totalSeconds) {
+		var seconds = Math.max(0, parseInt(totalSeconds, 10) || 0);
+		var minutes = Math.floor(seconds / 60);
+		var remainder = seconds % 60;
+		if (minutes <= 0) return remainder + 's';
+		if (remainder === 0) return minutes + 'm';
+		return minutes + 'm ' + remainder + 's';
+	}
+
+	function _normalizeRefreshPct(value) {
+		var pct = parseInt(value, 10);
+		if (isNaN(pct)) return 0;
+		return Math.max(0, Math.min(100, pct));
+	}
+
+	function _setManualRefreshState(isActive, pct, message) {
+		manualRefreshInProgress = !!isActive;
+		manualRefreshProgressPct = manualRefreshInProgress ? _normalizeRefreshPct(pct) : 0;
+		manualRefreshProgressMessage = manualRefreshInProgress ? String(message || '') : '';
+	}
+
+	function _getEffectiveRefreshRun(refresh) {
+		if (refresh && refresh.last_status === 'running') {
+			return {
+				pct: _normalizeRefreshPct(refresh.progress_pct),
+				message: String(refresh.progress_message || 'Refreshing data...')
+			};
+		}
+		if (manualRefreshInProgress) {
+			return {
+				pct: _normalizeRefreshPct(manualRefreshProgressPct),
+				message: manualRefreshProgressMessage || 'Refreshing data...'
+			};
+		}
+		return null;
+	}
+
+	function _renderRefreshButtonVisual(btn, options) {
+		if (!btn) return;
+		var labelEl = btn.querySelector('[data-refresh-label]');
+		var circle = btn.querySelector('[data-refresh-circle]');
+		var defaultLabel = btn.getAttribute('data-default-label') || 'Refresh';
+		var state = (options && options.state) || 'idle';
+		var label = (options && options.label) || defaultLabel;
+		var pct = _normalizeRefreshPct(options && options.pct);
+		var disabled = !!(options && options.disabled);
+		var title = options && options.title ? String(options.title) : '';
+
+		btn.dataset.refreshState = state;
+		btn.classList.toggle('refreshing', state === 'running');
+		btn.classList.toggle('refresh-complete', state === 'complete');
+		btn.classList.toggle('refresh-error', state === 'error');
+		btn.disabled = disabled;
+		if (labelEl) labelEl.textContent = label;
+		if (circle) circle.style.setProperty('--refresh-progress', String(pct));
+		if (title) {
+			btn.setAttribute('title', title);
+		} else {
+			btn.removeAttribute('title');
+		}
+	}
+
+	function _renderOperatorRefreshControls(refresh) {
+		var toggleBtn = document.getElementById('actions-menu-toggle');
+		var actionBtn = document.getElementById('refresh-action-btn');
+		var running = _getEffectiveRefreshRun(refresh);
+
+		if (running) {
+			var runningLabel = running.pct > 0 ? ('Refreshing ' + running.pct + '%') : 'Refreshing...';
+			_renderRefreshButtonVisual(toggleBtn, {
+				state: 'running',
+				label: runningLabel,
+				pct: running.pct,
+				disabled: false,
+				title: running.message
+			});
+			_renderRefreshButtonVisual(actionBtn, {
+				state: 'running',
+				label: runningLabel,
+				pct: running.pct,
+				disabled: true,
+				title: running.message
+			});
+			return;
+		}
+
+		_renderRefreshButtonVisual(toggleBtn, {
+			state: 'idle',
+			label: toggleBtn ? (toggleBtn.getAttribute('data-default-label') || 'Actions') : 'Actions',
+			pct: 0,
+			disabled: false
+		});
+		_renderRefreshButtonVisual(actionBtn, {
+			state: 'idle',
+			label: actionBtn ? (actionBtn.getAttribute('data-default-label') || 'Refresh Data') : 'Refresh Data',
+			pct: 0,
+			disabled: false
+		});
+	}
+
+	function _nextDashboardTheme(theme) {
+		return theme === 'dark' ? 'light' : 'dark';
+	}
+
+	function _syncThemeButtons() {
+		var nextTheme = _nextDashboardTheme(ACTIVE_THEME);
+		document.querySelectorAll('[data-theme-toggle]').forEach(function(btn) {
+			var label = btn.querySelector('.theme-toggle-label');
+			var icon = btn.querySelector('.theme-toggle-icon');
+			btn.setAttribute('aria-label', 'Switch to ' + nextTheme + ' mode');
+			btn.setAttribute('title', 'Switch to ' + nextTheme + ' mode');
+			if (label) {
+				label.textContent = nextTheme === 'dark' ? 'Dark mode' : 'Light mode';
+			}
+			if (icon) {
+				icon.textContent = nextTheme === 'dark' ? '☾' : '☀';
+			}
+		});
+	}
+
+	function _broadcastThemeToDetailFrames(theme) {
+		var targetOrigin = window.location.origin || '*';
+		document.querySelectorAll('iframe.public-detail-frame').forEach(function(frame) {
+			try {
+				if (frame.contentWindow) {
+					frame.contentWindow.postMessage({ type: 'dashboard-theme', theme: theme }, targetOrigin);
+				}
+			} catch (err) {}
+		});
+	}
+
+	function applyDashboardTheme(theme, persist) {
+		if (theme !== 'light' && theme !== 'dark') {
+			theme = 'light';
+		}
+		ACTIVE_THEME = theme;
+		document.documentElement.setAttribute('data-theme', theme);
+		document.documentElement.style.colorScheme = theme;
+		if (document.body) {
+			document.body.setAttribute('data-theme', theme);
+		}
+		if (persist !== false) {
+			try {
+				window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+			} catch (err) {}
+			}
+			_syncThemeButtons();
+			_broadcastThemeToDetailFrames(theme);
+			if (typeof window.restyleArchiveMapsForTheme === 'function') {
+				window.restyleArchiveMapsForTheme();
+			}
+		}
+
+	function toggleDashboardTheme() {
+		applyDashboardTheme(_nextDashboardTheme(ACTIVE_THEME), true);
+	}
+
+	window.addEventListener('storage', function(event) {
+		if (event.key !== THEME_STORAGE_KEY) return;
+		if (event.newValue === 'light' || event.newValue === 'dark') {
+			applyDashboardTheme(event.newValue, false);
+		}
+	});
+
+	window.addEventListener('message', function(event) {
+		if (event.origin !== window.location.origin) return;
+		if (!event.data || event.data.type !== 'dashboard-theme') return;
+		if (event.data.theme === 'light' || event.data.theme === 'dark') {
+			applyDashboardTheme(event.data.theme, false);
+		}
+	});
+
+	function canUseVerificationTools() {
+		var host = (window.location.hostname || '').toLowerCase();
+		var isLocalBrowser = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+		return !!VERIFICATION_TOOLS_ENABLED && isLocalBrowser;
+	}
+
+	function syncVerificationToolVisibility() {
+		var enabled = canUseVerificationTools();
+		document.querySelectorAll('[data-local-verification-only="true"]').forEach(function(el) {
+			el.hidden = !enabled;
+		});
+		if (!enabled) closeCacheModal();
+	}
+
+	function closeActionsMenu() {
+		var menu = document.getElementById('actions-menu');
+		if (menu) menu.style.display = 'none';
+	}
+
+	function toggleActionsMenu(event) {
+		if (event) event.stopPropagation();
+		var menu = document.getElementById('actions-menu');
+		if (!menu) return;
+		menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+	}
+
+	function _getSettingDefinition(key) {
+		if (!currentSettingsPayload || !Array.isArray(currentSettingsPayload.settings)) return null;
+		for (var i = 0; i < currentSettingsPayload.settings.length; i++) {
+			if (currentSettingsPayload.settings[i].key === key) return currentSettingsPayload.settings[i];
+		}
+		return null;
+	}
+
+	function _normalizeSettingValue(defn, raw) {
+		if (!defn) return raw;
+		if (defn.value_type === 'bool') return !!raw;
+		if (defn.value_type === 'int') {
+			var parsed = parseInt(raw, 10);
+			if (isNaN(parsed)) throw new Error(defn.label + ': enter a whole number.');
+			return parsed;
+		}
+		return raw;
+	}
+
+	function _getTimezoneOptions(currentValue) {
+		var options = COMMON_TIMEZONES.slice();
+		if (currentValue && options.indexOf(currentValue) === -1) options.push(currentValue);
+		return options;
+	}
+
+	function _renderSettingsCategories(settings) {
+		var bar = document.getElementById('settings-category-bar');
+		if (!bar) return;
+		bar.innerHTML = '';
+
+		var categories = [];
+		settings.forEach(function(item) {
+			var cat = item.category || 'schedule';
+			if (categories.indexOf(cat) === -1) categories.push(cat);
+		});
+		var order = ['schedule', 'monitoring', 'jira'];
+		categories.sort(function(a, b) {
+			var ai = order.indexOf(a);
+			var bi = order.indexOf(b);
+			if (ai === -1 && bi === -1) return a.localeCompare(b);
+			if (ai === -1) return 1;
+			if (bi === -1) return -1;
+			return ai - bi;
+		});
+
+		if (!categories.length) return;
+		if (!activeSettingsCategory || categories.indexOf(activeSettingsCategory) === -1) {
+			activeSettingsCategory = categories[0];
+		}
+
+		categories.forEach(function(cat) {
+			var btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = 'settings-category-btn' + (cat === activeSettingsCategory ? ' active' : '');
+			btn.textContent = SETTINGS_CATEGORY_LABELS[cat] || cat;
+			btn.onclick = function() {
+				activeSettingsCategory = cat;
+				_renderSettingsForm();
+			};
+			bar.appendChild(btn);
+		});
+	}
+
+	function _setLastUpdatedIndicator(isoValue, isUpdating) {
+		var el = document.getElementById('last-updated-indicator');
+		if (!el) return;
+		var text = 'n/a';
+		if (isUpdating) {
+			text = 'refreshing…';
+		} else if (isoValue) {
+			text = _formatTopBarDateTime(isoValue);
+		}
+		el.textContent = text;
+		el.classList.toggle('updating', !!isUpdating);
+		if (!isUpdating && isoValue) {
+			el.setAttribute('data-updated-at', isoValue);
+		}
+	}
+
+		function initLastUpdatedIndicator() {
+			var el = document.getElementById('last-updated-indicator');
+			if (!el) return;
+			_setLastUpdatedIndicator(el.getAttribute('data-updated-at') || '', false);
+		}
+
+		function _setRefreshProgressIndicator(text, isActive, isError) {
+			var el = document.getElementById('refresh-progress-indicator');
+			if (!el) return;
+			if (refreshProgressHideTimer) {
+				clearTimeout(refreshProgressHideTimer);
+				refreshProgressHideTimer = null;
+			}
+			if (!text) {
+				el.style.display = 'none';
+				el.textContent = '';
+				el.classList.remove('active');
+				el.classList.remove('error');
+				return;
+			}
+			el.style.display = 'inline-block';
+			el.textContent = 'Refresh: ' + text;
+			el.classList.toggle('active', !!isActive);
+			el.classList.toggle('error', !!isError);
+		}
+
+		function _hideRefreshProgressIndicator(delayMs) {
+			if (refreshProgressHideTimer) clearTimeout(refreshProgressHideTimer);
+			refreshProgressHideTimer = setTimeout(function() {
+				_setRefreshProgressIndicator('', false, false);
+			}, delayMs || 0);
+		}
+
+	function _renderAutoRefreshStatus(scheduler) {
+		var statusEl = document.getElementById('auto-refresh-status');
+		if (!statusEl) return;
+		if (!scheduler || !scheduler.enabled) {
+			statusEl.textContent = 'off';
+			return;
+		}
+		var nextText = _formatTopBarDateTime(scheduler.next_run_local);
+		statusEl.textContent = 'daily ' + scheduler.time + ' · next ' + nextText;
+	}
+
+	function _formatRefreshRunningLabel(running) {
+		if (!running) return 'Refreshing...';
+		var pct = _normalizeRefreshPct(running.pct);
+		return pct > 0 ? ('Refreshing ' + pct + '%') : 'Refreshing...';
+	}
+
+	function _formatRefreshProgressSummary(refresh) {
+		var running = _getEffectiveRefreshRun(refresh);
+		if (!running) return '';
+		var pct = _normalizeRefreshPct(running.pct);
+		var message = String(running.message || 'Refreshing data...');
+		return pct > 0 ? (pct + '% ' + message) : message;
+	}
+
+	function _renderPublicRefreshButton(publicRefresh, refresh) {
+		var btn = document.getElementById('public-refresh-btn');
+		if (!btn) return;
+		var running = _getEffectiveRefreshRun(refresh);
+		if (running) {
+			_renderRefreshButtonVisual(btn, {
+				state: 'running',
+				label: _formatRefreshRunningLabel(running),
+				pct: running.pct,
+				disabled: true,
+				title: running.message
+			});
+			return;
+		}
+
+		if (publicRefresh && publicRefresh.available_now === false) {
+			_renderRefreshButtonVisual(btn, {
+				state: 'idle',
+				label: 'Refresh (' + _formatDurationShort(publicRefresh.seconds_remaining) + ')',
+				pct: 0,
+				disabled: true,
+				title: 'Manual refresh is limited to once every 10 minutes.'
+			});
+			return;
+		}
+
+		_renderRefreshButtonVisual(btn, {
+			state: 'idle',
+			label: btn.getAttribute('data-default-label') || 'Refresh Data',
+			pct: 0,
+			disabled: false
+		});
+	}
+
+	function _renderSchedulerSummary(scheduler) {
+		var summary = document.getElementById('settings-scheduler-summary');
+		if (!summary) return;
+		if (!scheduler || !scheduler.enabled) {
+			summary.textContent = 'Automatic refresh is currently disabled.';
+			return;
+		}
+		var text = 'Automatic refresh runs daily at ' + scheduler.time + ' (' + scheduler.timezone + ').';
+		text += ' Next run: ' + _formatIsoDateTime(scheduler.next_run_local) + '.';
+		if (scheduler.last_status && scheduler.last_status !== 'idle') {
+			text += ' Last scheduler status: ' + scheduler.last_status + '.';
+		}
+		if (scheduler.last_error) {
+			text += ' Last error: ' + scheduler.last_error;
+		}
+		summary.textContent = text;
+	}
+
+	function _createSettingInput(setting) {
+		var wrapper = document.createElement('div');
+		wrapper.className = 'settings-field';
+		if (setting.source === 'cli') {
+			wrapper.classList.add('settings-cli-locked');
+		}
+		var hasDraft = Object.prototype.hasOwnProperty.call(settingsDraftValues, setting.key);
+		var currentValue = hasDraft ? settingsDraftValues[setting.key] : setting.value;
+
+		var label = document.createElement('label');
+		label.textContent = setting.label || setting.key;
+		wrapper.appendChild(label);
+
+		var desc = document.createElement('small');
+		desc.textContent = setting.description || '';
+		wrapper.appendChild(desc);
+
+		var input;
+		if (setting.value_type === 'bool') {
+			var row = document.createElement('div');
+			row.className = 'settings-checkbox-row';
+			input = document.createElement('input');
+			input.type = 'checkbox';
+			input.checked = !!currentValue;
+			var text = document.createElement('span');
+			text.textContent = input.checked ? 'Enabled' : 'Disabled';
+			input.addEventListener('change', function() {
+				text.textContent = input.checked ? 'Enabled' : 'Disabled';
+				settingsDraftValues[setting.key] = !!input.checked;
+			});
+			row.appendChild(input);
+			row.appendChild(text);
+			wrapper.appendChild(row);
+		} else {
+			if (setting.key === 'auto_refresh_timezone') {
+				input = document.createElement('select');
+				_getTimezoneOptions(String(currentValue || 'UTC')).forEach(function(zone) {
+					var opt = document.createElement('option');
+					opt.value = zone;
+					opt.textContent = zone;
+					input.appendChild(opt);
+				});
+				input.value = String(currentValue || 'UTC');
+			} else {
+				input = document.createElement('input');
+				if (setting.value_type === 'int') {
+					input.type = 'number';
+					if (setting.min !== null && setting.min !== undefined) input.min = setting.min;
+					if (setting.max !== null && setting.max !== undefined) input.max = setting.max;
+				} else if (setting.value_type === 'time') {
+					input.type = 'time';
+					input.step = 60;
+				} else {
+					input.type = 'text';
+				}
+				input.value = currentValue !== null && currentValue !== undefined ? String(currentValue) : '';
+			}
+			input.addEventListener('input', function() {
+				settingsDraftValues[setting.key] = input.value;
+			});
+			input.addEventListener('change', function() {
+				settingsDraftValues[setting.key] = input.value;
+			});
+			wrapper.appendChild(input);
+		}
+
+		input.dataset.settingKey = setting.key;
+		input.dataset.valueType = setting.value_type;
+		if (setting.source === 'cli') {
+			input.disabled = true;
+		}
+
+		var source = document.createElement('div');
+		source.className = 'settings-source';
+		source.textContent = 'Current source: ' + _sourceText(setting.source);
+		wrapper.appendChild(source);
+
+		return wrapper;
+	}
+
+	function _renderSettingsForm(payload) {
+		if (payload) {
+			currentSettingsPayload = payload;
+		}
+		if (!currentSettingsPayload) return;
+
+		var form = document.getElementById('settings-form');
+		if (!form) return;
+		form.innerHTML = '';
+		var settings = (currentSettingsPayload && currentSettingsPayload.settings) || [];
+		_renderSettingsCategories(settings);
+		var visible = settings.filter(function(setting) {
+			return (setting.category || 'schedule') === activeSettingsCategory;
+		});
+		if (!visible.length) {
+			var empty = document.createElement('div');
+			empty.className = 'settings-empty';
+			empty.textContent = 'No settings in this category.';
+			form.appendChild(empty);
+		}
+		visible.forEach(function(setting) {
+			form.appendChild(_createSettingInput(setting));
+		});
+		_renderSchedulerSummary(currentSettingsPayload ? currentSettingsPayload.scheduler : null);
+		_renderAutoRefreshStatus(currentSettingsPayload ? currentSettingsPayload.scheduler : null);
+	}
+
+		function loadDashboardSettings() {
+			return fetch(buildDashboardUrl('/api/settings'))
+				.then(function(resp) { return resp.json(); })
+				.then(function(data) {
+					if (!data || data.status !== 'ok') return;
+					currentSettingsPayload = data;
+					settingsDraftValues = {};
+					_renderSettingsForm();
+					_applyRuntimeStatus(data);
+				})
+				.catch(function() {});
+		}
+
+		function _applyRuntimeStatus(payload) {
+			if (!payload) return;
+			var scheduler = payload.scheduler || null;
+			var refresh = payload.refresh || null;
+			var publicRefresh = payload.public_refresh || null;
+
+			_renderPublicRefreshButton(publicRefresh, refresh);
+			_renderOperatorRefreshControls(refresh);
+
+			if (scheduler) {
+				_renderAutoRefreshStatus(scheduler);
+				var modal = document.getElementById('settings-modal');
+				if (modal && modal.style.display !== 'none') {
+					_renderSchedulerSummary(scheduler);
+				}
+			}
+
+			if (!refresh) return;
+
+			var lastUpdatedEl = document.getElementById('last-updated-indicator');
+			if (!lastUpdatedEl) {
+				// Detail pages do not have a dashboard timestamp; without this guard a
+				// completed refresh looks stale forever and the widget page reloads in a loop.
+				if (refresh.last_status === 'running') {
+					_setRefreshProgressIndicator(_formatRefreshProgressSummary(refresh), true, false);
+				}
+				return;
+			}
+			var currentUpdatedAt = lastUpdatedEl ? (lastUpdatedEl.getAttribute('data-updated-at') || '') : '';
+			var currentUpdatedMs = _isoToMs(currentUpdatedAt);
+			var startedMs = _isoToMs(refresh.last_started_at || '');
+			var finishedAt = refresh.last_finished_at || '';
+			var trigger = refresh.last_trigger || 'manual';
+			var pageIsStaleForLatestRefresh = false;
+
+			if (isNaN(currentUpdatedMs)) {
+				pageIsStaleForLatestRefresh = !!finishedAt;
+			} else if (!isNaN(startedMs)) {
+				// If page timestamp is older than latest refresh start, this page is stale.
+				pageIsStaleForLatestRefresh = currentUpdatedMs < startedMs;
+			} else {
+				// Fallback when start time is missing.
+				pageIsStaleForLatestRefresh = finishedAt && finishedAt !== currentUpdatedAt;
+			}
+
+			if (refresh.last_status === 'running') {
+				if (manualRefreshInProgress) {
+					_setManualRefreshState(true, refresh.progress_pct, refresh.progress_message);
+				}
+				_setRefreshProgressIndicator(_formatRefreshProgressSummary(refresh), true, false);
+				return;
+			}
+
+			if (refresh.last_status === 'ok' && finishedAt) {
+				var isNewFinishedEvent = finishedAt !== lastProcessedRefreshFinishedAt;
+				if (manualRefreshInProgress) {
+					_setManualRefreshState(false, 0, '');
+				}
+				if (finishedAt !== currentUpdatedAt) {
+					_setLastUpdatedIndicator(finishedAt, false);
+				}
+				if (isNewFinishedEvent) {
+					if (pageIsStaleForLatestRefresh) {
+						var reloadMessage = trigger === 'scheduled' ? 'auto refresh complete. Reloading...' : 'refresh complete. Reloading...';
+						_setRefreshProgressIndicator(reloadMessage, false, false);
+						if (!scheduledReloadTimer) {
+							scheduledReloadTimer = setTimeout(function() {
+								scheduledReloadTimer = null;
+								window.location.reload();
+							}, 1800);
+						}
+					} else {
+						_setRefreshProgressIndicator(trigger === 'scheduled' ? 'auto refresh complete' : 'refresh complete', false, false);
+						_hideRefreshProgressIndicator(6000);
+					}
+				}
+				lastProcessedRefreshFinishedAt = finishedAt;
+				return;
+			}
+
+			if (refresh.last_status === 'error' && refresh.last_error) {
+				if (manualRefreshInProgress) {
+					_setManualRefreshState(false, 0, '');
+				}
+				var prefix = trigger === 'scheduled' ? 'auto refresh failed: ' : 'refresh failed: ';
+				_setRefreshProgressIndicator(prefix + refresh.last_error, false, true);
+				_hideRefreshProgressIndicator(10000);
+			}
+		}
+
+		function pollRuntimeStatusOnce() {
+			return fetch(buildDashboardUrl('/api/runtime-status'))
+				.then(function(resp) { return resp.json(); })
+				.then(function(data) {
+					if (!data || data.status !== 'ok') return;
+					_applyRuntimeStatus(data);
+				})
+				.catch(function() {});
+		}
+
+		function startRuntimeStatusPolling() {
+			if (runtimeStatusPollTimer) return;
+			pollRuntimeStatusOnce();
+			runtimeStatusPollTimer = setInterval(pollRuntimeStatusOnce, 3000);
+		}
+
+	function openSettingsModal() {
+		closeActionsMenu();
+		var modal = document.getElementById('settings-modal');
+		if (modal) modal.style.display = 'flex';
+		loadDashboardSettings();
+	}
+
+	function closeSettingsModal() {
+		var modal = document.getElementById('settings-modal');
+		if (modal) modal.style.display = 'none';
+	}
+
+	function _collectSettingsUpdates() {
+		var updates = {};
+		Object.keys(settingsDraftValues).forEach(function(key) {
+			var defn = _getSettingDefinition(key);
+			if (!defn || defn.source === 'cli') return;
+			var normalized = _normalizeSettingValue(defn, settingsDraftValues[key]);
+			if (defn.value_type === 'int') {
+				if (defn.min !== null && defn.min !== undefined && normalized < defn.min) {
+					throw new Error(defn.label + ' must be at least ' + defn.min + '.');
+				}
+				if (defn.max !== null && defn.max !== undefined && normalized > defn.max) {
+					throw new Error(defn.label + ' must be at most ' + defn.max + '.');
+				}
+			}
+			updates[key] = normalized;
+		});
+		return updates;
+	}
+
+	function saveDashboardSettings() {
+		var btn = document.getElementById('settings-save-btn');
+		if (btn) btn.disabled = true;
+
+		var updates;
+		try {
+			updates = _collectSettingsUpdates();
+		} catch (e) {
+			if (btn) btn.disabled = false;
+			alert(e.message || 'Invalid settings.');
+			return;
+		}
+		if (!Object.keys(updates).length) {
+			if (btn) btn.disabled = false;
+			alert('No unsaved setting changes.');
+			return;
+		}
+
+		fetch(buildDashboardUrl('/api/settings'), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ values: updates })
+		})
+			.then(function(resp) {
+				return resp.json().then(function(data) {
+					return { ok: resp.ok, data: data };
+				});
+			})
+			.then(function(result) {
+				if (!result.ok || !result.data || result.data.status !== 'ok') {
+					throw new Error((result.data && result.data.message) || 'Failed to save settings.');
+				}
+				currentSettingsPayload = result.data;
+				settingsDraftValues = {};
+				_renderSettingsForm();
+				alert('Settings saved. New values apply on the next refresh run. CLI overrides still take priority if active.');
+			})
+			.catch(function(e) {
+				alert(e.message || 'Could not save settings.');
+			})
+			.finally(function() {
+				if (btn) btn.disabled = false;
+			});
+	}
+
+	// Prevent widget cascade failures by isolating each widget
+	(function() {
+		// Override console.error to catch widget errors
+		const originalError = console.error;
+		console.error = function(...args) {
+			// Log the error but don't let it break subsequent widgets
+			originalError.apply(console, args);
+		};
+
+		const pendingWidgetContainers = new Set();
+		const WIDGET_RESCAN_COOLDOWN_MS = 15000;
+
+		function isWidgetLoading(widget) {
+			if (!widget) return false;
+			const lowerText = (widget.textContent || "").toLowerCase();
+			return lowerText.includes("requesting archive files") || lowerText.includes("waiting for other widgets");
+		}
+
+		function getWidgetLastScanAt(widget) {
+			if (!widget) return 0;
+			return Number(widget.getAttribute("data-widget-last-scan-at") || "0");
+		}
+
+		function markWidgetScan(widget) {
+			if (!widget) return;
+			var scanCount = Number(widget.getAttribute("data-widget-scan-count") || "0") + 1;
+			widget.setAttribute("data-widget-last-scan-at", String(Date.now()));
+			widget.setAttribute("data-widget-scan-count", String(scanCount));
+		}
+
+		function canScanWidget(widget, force) {
+			if (!widget) return;
+			if (!widget.getAttribute("data-widget")) return;
+			if (!force && widget.getAttribute("data-oncdw-processed") === "true") return false;
+			var lastScanAt = getWidgetLastScanAt(widget);
+			if (!force) {
+				return lastScanAt === 0;
+			}
+			if (!lastScanAt) return true;
+			if (isWidgetLoading(widget)) return false;
+			return (Date.now() - lastScanAt) >= WIDGET_RESCAN_COOLDOWN_MS;
+		}
+
+		function withOnlyWidgetVisibleToOncDW(widget, callback) {
+			var stashed = [];
+			document.querySelectorAll(".oncWidget").forEach(function(other) {
+				if (other === widget) return;
+				stashed.push([other, other.getAttribute("class") || ""]);
+				other.classList.remove("oncWidget");
+			});
+			try {
+				callback();
+			} finally {
+				stashed.forEach(function(item) {
+					item[0].setAttribute("class", item[1]);
+				});
+			}
+		}
+
+		function scanWidgetWithOncDW(widget) {
+			if (!window.OncDW || typeof window.OncDW.detectWidgets !== "function") return false;
+			var beforeCount = Array.isArray(window.OncDW._widgets) ? window.OncDW._widgets.length : 0;
+			withOnlyWidgetVisibleToOncDW(widget, function() {
+				window.OncDW.detectWidgets();
+			});
+			var afterCount = Array.isArray(window.OncDW._widgets) ? window.OncDW._widgets.length : beforeCount;
+			if (afterCount <= beforeCount) return false;
+			widget.setAttribute("data-oncdw-processed", "true");
+			for (var idx = beforeCount; idx < afterCount; idx++) {
+				if (typeof window.OncDW.processWidget === "function") {
+					window.OncDW.processWidget(idx);
+				}
+			}
+			return true;
+		}
+
+		function scanWidget(widget, force) {
+			if (!canScanWidget(widget, !!force)) return false;
+			if (window.oncdw && typeof window.oncdw.scan === "function") {
+				markWidgetScan(widget);
+				if (window.oncdw.scan(widget) === false) return false;
+				widget.setAttribute("data-oncdw-processed", "true");
+				return true;
+			}
+			markWidgetScan(widget);
+			return scanWidgetWithOncDW(widget);
+		}
+
+		var ONC_ARCHIVE_APIPROXY_DOWNLOAD_BASE = 'https://data.oceannetworks.ca/apiproxy/archivefiles?method=getFile';
+
+		function buildArchiveApiproxyDownloadUrl(filename) {
+			if (!filename) return '';
+			return ONC_ARCHIVE_APIPROXY_DOWNLOAD_BASE + '&filename=' + encodeURIComponent(filename);
+		}
+
+		function getFilenameFromArchiveDownloadUrl(value) {
+			if (!value) return '';
+			try {
+				var url = new URL(value, window.location.href);
+				var host = String(url.hostname || '').toLowerCase();
+				var path = String(url.pathname || '').toLowerCase();
+				var method = String(url.searchParams.get('method') || '').toLowerCase();
+				if (host !== 'data.oceannetworks.ca') return '';
+				if (path !== '/api/archivefiles' && path !== '/apiproxy/archivefiles') return '';
+				if (method !== 'getfile') return '';
+				return url.searchParams.get('filename') || '';
+			} catch (e) {
+				var match = String(value).match(/[?&]filename=([^&#]+)/);
+				if (!match) return '';
+				try {
+					return decodeURIComponent(match[1].replace(/\+/g, '%20'));
+				} catch (decodeError) {
+					return match[1];
+				}
+			}
+		}
+
+		function rewriteArchiveDownloadLink(link) {
+			if (!link || !link.getAttribute) return false;
+			var filename = getFilenameFromArchiveDownloadUrl(link.getAttribute('href') || link.href || '');
+			if (!filename) return false;
+			var sanitizedUrl = buildArchiveApiproxyDownloadUrl(filename);
+			if (!sanitizedUrl) return false;
+			if (link.getAttribute('href') !== sanitizedUrl) {
+				link.href = sanitizedUrl;
+			}
+			link.target = '_blank';
+			link.rel = 'noopener';
+			link.setAttribute('data-archive-download-sanitized', 'true');
+			return true;
+		}
+
+		function sanitizeArchiveDownloadLinks(root) {
+			var container = root && root.querySelectorAll ? root : document;
+			if (container.matches && container.matches('a[href*="archivefiles"][href*="method=getFile"]')) {
+				rewriteArchiveDownloadLink(container);
+			}
+			container.querySelectorAll('a[href*="archivefiles"][href*="method=getFile"]').forEach(rewriteArchiveDownloadLink);
+		}
+
+		function patchArchiveMapDownloadBase(widgetInstance) {
+			var map = widgetInstance && widgetInstance.map;
+			if (!map) return;
+			map.baseUrl = ONC_ARCHIVE_APIPROXY_DOWNLOAD_BASE;
+			map.getFileUrl = ONC_ARCHIVE_APIPROXY_DOWNLOAD_BASE;
+		}
+
+		function patchWindowOpenForArchiveDownloads() {
+			if (window.__hydrophoneArchiveWindowOpenPatched || typeof window.open !== 'function') return;
+			var originalOpen = window.open;
+			window.open = function(url, target, features) {
+				var filename = getFilenameFromArchiveDownloadUrl(url);
+				var safeUrl = filename ? buildArchiveApiproxyDownloadUrl(filename) : url;
+				return originalOpen.call(window, safeUrl, target, features);
+			};
+			window.__hydrophoneArchiveWindowOpenPatched = true;
+		}
+
+		function sanitizeArchiveWidgetDownloads(widgetInstance) {
+			var widget = widgetInstance && widgetInstance.dom && widgetInstance.dom.base;
+			if (widget) {
+				sanitizeArchiveDownloadLinks(widget);
+				if (widget.getAttribute('data-widget') === 'archiveMap') {
+					patchArchiveMapDownloadBase(widgetInstance);
+				}
+			}
+		}
+
+		function sanitizeAllArchiveDownloads(root) {
+			sanitizeArchiveDownloadLinks(root || document);
+			if (!window.OncDW || !Array.isArray(window.OncDW._widgets)) return;
+			window.OncDW._widgets.forEach(sanitizeArchiveWidgetDownloads);
+		}
+
+		window.hydrophoneSanitizeArchiveDownloads = sanitizeAllArchiveDownloads;
+
+		function formatArchiveMapDays(days) {
+			return days + ' day' + (days === 1 ? '' : 's');
+		}
+
+			function clampArchiveMapDays(value, maxDays) {
+				var parsed = parseInt(value, 10);
+				if (!Number.isFinite(parsed)) parsed = 7;
+				var limit = Math.min(Math.max(parseInt(maxDays, 10) || 60, 1), 60);
+				return Math.min(Math.max(parsed, 1), limit);
+			}
+
+			function padArchiveMapDatePart(value, size) {
+				var text = String(value);
+				while (text.length < size) text = '0' + text;
+				return text;
+			}
+
+			function formatArchiveMapUtc(ms) {
+				var date = new Date(ms);
+				return date.getUTCFullYear()
+					+ '-' + padArchiveMapDatePart(date.getUTCMonth() + 1, 2)
+					+ '-' + padArchiveMapDatePart(date.getUTCDate(), 2)
+					+ 'T' + padArchiveMapDatePart(date.getUTCHours(), 2)
+					+ ':' + padArchiveMapDatePart(date.getUTCMinutes(), 2)
+					+ ':' + padArchiveMapDatePart(date.getUTCSeconds(), 2)
+					+ '.' + padArchiveMapDatePart(date.getUTCMilliseconds(), 3)
+					+ 'Z';
+			}
+
+			function getArchiveMapRangeEndDate(widget) {
+				var rawDateTo = widget && widget.getAttribute('dateTo');
+				if (rawDateTo) {
+					var parsed = Date.parse(rawDateTo);
+					if (!Number.isNaN(parsed)) return new Date(parsed);
+				}
+				return new Date();
+			}
+
+			function buildArchiveMapCalendarRange(widget, days) {
+				var endDate = getArchiveMapRangeEndDate(widget);
+				var endDayStart = Date.UTC(
+					endDate.getUTCFullYear(),
+					endDate.getUTCMonth(),
+					endDate.getUTCDate()
+				);
+				var startMs = endDayStart - ((days - 1) * 86400000);
+				var endMs = endDayStart + 86400000 - 1;
+				return {
+					dateFrom: formatArchiveMapUtc(startMs),
+					dateTo: formatArchiveMapUtc(endMs)
+				};
+			}
+
+		function getArchiveMapControlTargetId(control) {
+			if (!control) return '';
+			return control.getAttribute('data-target') || control.getAttribute('aria-controls') || '';
+		}
+
+		function updateArchiveMapDaysDisplay(slider) {
+			if (!slider) return 7;
+			var days = clampArchiveMapDays(slider.value, slider.getAttribute('max'));
+			if (String(slider.value) !== String(days)) {
+				slider.value = String(days);
+			}
+			var controls = slider.closest('[data-archive-map-controls]');
+			var output = controls && controls.querySelector('[data-archive-map-days-output]');
+			if (output) {
+				output.value = String(days);
+				output.textContent = formatArchiveMapDays(days);
+			}
+			return days;
+		}
+
+		function findArchiveMapWidgetInstance(widget) {
+			if (!widget || !window.OncDW || !Array.isArray(window.OncDW._widgets)) return null;
+			for (var idx = window.OncDW._widgets.length - 1; idx >= 0; idx--) {
+				var widgetInstance = window.OncDW._widgets[idx];
+				if (widgetInstance && widgetInstance.dom && widgetInstance.dom.base === widget) {
+					return widgetInstance;
+				}
+			}
+			return null;
+		}
+
+		function findArchiveMapControlsForWidget(widget) {
+			if (!widget || !widget.id) return null;
+			var controls = document.querySelectorAll('[data-archive-map-controls]');
+			for (var idx = 0; idx < controls.length; idx++) {
+				if (getArchiveMapControlTargetId(controls[idx]) === widget.id) {
+					return controls[idx];
+				}
+			}
+			return null;
+		}
+
+		function setArchiveMapRefreshState(controls, loading, message) {
+			if (!controls) return;
+			var button = controls.querySelector('[data-archive-map-refresh]');
+			var status = controls.querySelector('[data-archive-map-status]');
+			if (button) {
+				button.disabled = !!loading;
+				button.textContent = loading ? 'Loading...' : 'Refresh';
+			}
+			if (status) {
+				status.textContent = message || '';
+			}
+			if (loading) {
+				controls.setAttribute('data-archive-map-loading', 'true');
+			} else {
+				controls.removeAttribute('data-archive-map-loading');
+			}
+		}
+
+		function buildCleanArchiveMapWidget(widget, days, token) {
+			var refreshed = document.createElement(widget.tagName.toLowerCase());
+			Array.prototype.forEach.call(widget.attributes, function(attribute) {
+				var name = attribute.name;
+				if (
+					name === 'class' ||
+					name === 'data-oncdw-processed' ||
+					name === 'data-widget-last-scan-at' ||
+					name === 'data-widget-scan-count' ||
+					name === 'data-archive-map-extended' ||
+					name === 'data-archive-refresh-token'
+				) {
+					return;
+				}
+				refreshed.setAttribute(name, attribute.value);
+				});
+				refreshed.className = widget.getAttribute('data-widget-base-class') || 'oncWidget widget-isolated';
+				var range = buildArchiveMapCalendarRange(widget, days);
+				refreshed.setAttribute('dateFrom', range.dateFrom);
+				refreshed.setAttribute('dateTo', range.dateTo);
+				refreshed.setAttribute('data-archive-map-days', String(days));
+				refreshed.setAttribute('data-archive-refresh-token', token);
+				return refreshed;
+			}
+
+		function refreshArchiveMapFromControl(control) {
+			var controls = control && control.closest('[data-archive-map-controls]');
+			if (!controls || controls.getAttribute('data-archive-map-loading') === 'true') return;
+			var slider = controls.querySelector('[data-archive-map-days]');
+			var targetId = getArchiveMapControlTargetId(control) || getArchiveMapControlTargetId(controls);
+			var widget = targetId ? document.getElementById(targetId) : null;
+			if (!widget) {
+				setArchiveMapRefreshState(controls, false, 'Archive map unavailable');
+				return;
+			}
+
+			var days = updateArchiveMapDaysDisplay(slider);
+			var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+			var oldInstance = findArchiveMapWidgetInstance(widget);
+			if (oldInstance) {
+				oldInstance.cancelled = true;
+			}
+
+			var refreshed = buildCleanArchiveMapWidget(widget, days, token);
+			widget.replaceWith(refreshed);
+			controls.setAttribute('data-archive-map-refresh-token', token);
+			setArchiveMapRefreshState(controls, true, 'Loading ' + formatArchiveMapDays(days));
+			if (!scanWidget(refreshed, true)) {
+				setArchiveMapRefreshState(controls, false, 'Widget loader unavailable');
+			}
+		}
+
+		function finishArchiveMapRefresh(widget) {
+			var controls = findArchiveMapControlsForWidget(widget);
+			if (!controls || controls.getAttribute('data-archive-map-loading') !== 'true') return;
+			var expectedToken = controls.getAttribute('data-archive-map-refresh-token');
+			if (expectedToken && widget.getAttribute('data-archive-refresh-token') !== expectedToken) return;
+
+			var days = clampArchiveMapDays(widget.getAttribute('data-archive-map-days'), 60);
+			var failed = !!widget.querySelector('.statusMsg.error, .statusMsg.api_error');
+			setArchiveMapRefreshState(
+				controls,
+				false,
+				failed ? 'Could not load ' + formatArchiveMapDays(days) : formatArchiveMapDays(days) + ' loaded'
+			);
+			controls.removeAttribute('data-archive-map-refresh-token');
+		}
+
+		document.addEventListener('input', function(event) {
+			var target = event.target;
+			if (target && target.matches && target.matches('[data-archive-map-days]')) {
+				updateArchiveMapDaysDisplay(target);
+			}
+		});
+
+		document.addEventListener('click', function(event) {
+			var target = event.target;
+			if (target && target.matches && target.matches('[data-archive-map-refresh]')) {
+				refreshArchiveMapFromControl(target);
+			}
+		});
+
+		window.oncdw = window.oncdw || {};
+		if (typeof window.oncdw.scan !== "function") {
+			window.oncdw.scan = scanWidgetWithOncDW;
+		}
+
+		function isPublicDetailPage() {
+			var body = document.body;
+			return !!(body && body.getAttribute('data-dashboard-variant') === 'public-detail');
+		}
+
+		function recoverWidget(widget) {
+			if (!widget) return;
+			if (!widget.getAttribute("data-widget")) return;
+			scanWidget(widget, true);
+		}
+
+		function scanContainer(container) {
+			try {
+				const widgets = container.querySelectorAll(".oncWidget");
+				widgets.forEach(function(widget) {
+					scanWidget(widget);
+				});
+			} catch(e) {
+				console.log("Container widget init failed:", container && container.id, e);
+			}
+		}
+
+		function shouldDeferContainer(container) {
+			if (!container) return false;
+			const detailsPanel = document.getElementById('details-tab-panel');
+			const detailSource = document.getElementById('internal-detail-source');
+			if (detailSource && detailSource.contains(container)) {
+				return true;
+			}
+			if (detailsPanel && detailsPanel.classList.contains('tab-panel-collapsed') && detailsPanel.contains(container)) {
+				return true;
+			}
+			if (container.offsetParent !== null) return false;
+			return !!(detailsPanel && (detailsPanel.hidden || detailsPanel.classList.contains('tab-panel-collapsed')) && detailsPanel.contains(container));
+		}
+
+		function scanContainerWhenVisible(container) {
+			if (!container) return;
+			if (shouldDeferContainer(container)) {
+				pendingWidgetContainers.add(container);
+				return;
+			}
+			pendingWidgetContainers.delete(container);
+			scanContainer(container);
+		}
+
+		function rescanDeferredContainers() {
+			const deferred = Array.from(pendingWidgetContainers);
+			deferred.forEach(function(container, idx) {
+				setTimeout(function() {
+					scanContainerWhenVisible(container);
+				}, idx * 60);
+			});
+		}
+
+		function widgetNeedsRecovery(widget) {
+			if (!widget || widget.offsetParent === null) return false;
+			const widgetType = widget.getAttribute('data-widget') || '';
+			const text = (widget.textContent || '').trim();
+			const hasRenderableContent = !!widget.querySelector('.contents, canvas, svg, .statusMsg, .errorMsg, table');
+			const hasText = text.length > 0;
+
+			if (widgetType === 'archiveFiles') {
+				return !hasRenderableContent && !hasText;
+			}
+
+			if (widgetType === 'archiveMap') {
+				const canvas = widget.querySelector('canvas');
+				const waitingForData = isWidgetLoading(widget);
+				if (!hasRenderableContent && !hasText) return true;
+				if (waitingForData) return false;
+				if (canvas && (canvas.clientWidth === 0 || canvas.clientHeight === 0)) return true;
+			}
+
+			return false;
+		}
+
+		function getArchiveMapDesiredRangeMax(widgetInstance) {
+			var widget = widgetInstance && widgetInstance.dom && widgetInstance.dom.base;
+			var rawDateTo = (widget && widget.getAttribute('dateTo')) || (widgetInstance && widgetInstance.filters && widgetInstance.filters.dateTo);
+			if (rawDateTo) {
+				var parsed = Date.parse(rawDateTo);
+				if (!Number.isNaN(parsed)) {
+					return parsed;
+				}
+			}
+
+			var now = new Date();
+			return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+		}
+
+			function redrawArchiveMapWidget(widgetInstance) {
+				if (!widgetInstance || !widgetInstance.map) return;
+				applyArchiveMapDataTypePalette(widgetInstance);
+				var map = widgetInstance.map;
+				if (typeof map.renderFiles === 'function') {
+					map.renderFiles(map.layout.area, map.layout.row);
+				}
+			if (map.lyrMap && typeof map.lyrMap.batchDraw === 'function') {
+				map.lyrMap.batchDraw();
+			}
+			if (map.lyrUI && typeof map.lyrUI.batchDraw === 'function') {
+				map.lyrUI.batchDraw();
+			}
+			var stage = map.lyrMap && typeof map.lyrMap.getStage === 'function' ? map.lyrMap.getStage() : null;
+				if (stage && typeof stage.draw === 'function') {
+					stage.draw();
+				}
+			}
+
+			function normalizeKonvaColor(value) {
+				return String(value || '').trim().toLowerCase();
+			}
+
+			function getKonvaClassName(node) {
+				if (!node) return '';
+				if (typeof node.getClassName === 'function') return node.getClassName();
+				return node.className || '';
+			}
+
+			var ARCHIVE_MAP_EXTENSION_PALETTE = {
+				flac: { dark: '#0e96ab', normal: '#7befff', light: '#b8f7ff' },
+				mat: { dark: '#5b4fd6', normal: '#9b8cff', light: '#c9c2ff' },
+				fft: { dark: '#b75a5f', normal: '#f2a0a3', light: '#ffd1d4' }
+			};
+
+			function formatArchiveMapLegendText(value) {
+				var match = String(value || '').trim().match(/^[^\s]+\s+\(\.([^\)]+)\)$/);
+				return match ? match[1].toLowerCase() : value;
+			}
+
+			function getArchiveMapExtension(dataEntry, key) {
+				var extension = dataEntry && dataEntry.extension;
+				if (!extension && key) {
+					var parts = String(key).split('.');
+					extension = parts[parts.length - 1];
+				}
+				return String(extension || '').toLowerCase();
+			}
+
+			function applyArchiveMapDataTypePalette(widgetInstance) {
+				var data = widgetInstance && widgetInstance.map && widgetInstance.map.data;
+				if (!data) return;
+				Object.keys(data).forEach(function(key) {
+					var entry = data[key];
+					var palette = ARCHIVE_MAP_EXTENSION_PALETTE[getArchiveMapExtension(entry, key)];
+					if (!entry || !palette) return;
+					entry.colors = entry.colors || {};
+					entry.colors.dark = palette.dark;
+					entry.colors.normal = palette.normal;
+					entry.colors.light = palette.light;
+				});
+			}
+
+			function coerceArchiveMapTimeMs(value) {
+				if (value === null || value === undefined || value === '') return null;
+				if (typeof value === 'number' && Number.isFinite(value)) return value;
+				if (value instanceof Date) {
+					var dateMs = value.getTime();
+					return Number.isFinite(dateMs) ? dateMs : null;
+				}
+				var numeric = Number(value);
+				if (Number.isFinite(numeric)) return numeric;
+				var parsed = Date.parse(value);
+				return Number.isFinite(parsed) ? parsed : null;
+			}
+
+			function getArchiveMapFileDurationMs(item) {
+				if (!item || item.length < 3) return null;
+				var startMs = coerceArchiveMapTimeMs(item[1]);
+				var endMs = coerceArchiveMapTimeMs(item[2]);
+				if (startMs === null || endMs === null || endMs < startMs) return null;
+				return endMs - startMs;
+			}
+
+			function relabelArchiveMapTooltipDuration(widgetInstance) {
+				var tooltip = widgetInstance && widgetInstance.map && widgetInstance.map.tooltip;
+				var wrapper = tooltip && tooltip.dom && tooltip.dom.wrapper;
+				if (!wrapper || !wrapper.querySelectorAll) return;
+				wrapper.querySelectorAll('.label').forEach(function(label) {
+					if ((label.textContent || '').trim().toLowerCase() === 'period:') {
+						label.textContent = 'duration:';
+					}
+				});
+			}
+
+			function patchArchiveMapTooltipDuration(widgetInstance) {
+				var map = widgetInstance && widgetInstance.map;
+				if (!map || map.__hydrophoneTooltipDurationPatched) return;
+				map.__hydrophoneTooltipDurationPatched = true;
+				var originalShowTooltip = map.showTooltip;
+				map.showTooltip = function(dataKey, itemIndex, rect) {
+					var entry = this.data && this.data[dataKey];
+					var item = entry && entry.items && entry.items[itemIndex];
+					var durationMs = getArchiveMapFileDurationMs(item);
+					if (this.tooltip && entry && item) {
+						relabelArchiveMapTooltipDuration(widgetInstance);
+						this.tooltip.show(
+							item,
+							entry.dataProductCode,
+							entry.extension,
+							durationMs !== null ? durationMs : entry.period,
+							rect
+						);
+						relabelArchiveMapTooltipDuration(widgetInstance);
+						return;
+					}
+					if (typeof originalShowTooltip === 'function') {
+						return originalShowTooltip.apply(this, arguments);
+					}
+				};
+				relabelArchiveMapTooltipDuration(widgetInstance);
+			}
+
+			function isArchiveMapLegendBox(node) {
+				if (!node || getKonvaClassName(node) !== 'Rect') return false;
+				var width = typeof node.width === 'function' ? Number(node.width()) : 0;
+				var height = typeof node.height === 'function' ? Number(node.height()) : 0;
+				return width > 0 && width <= 22 && height > 0 && height <= 22;
+			}
+
+			function isArchiveMapLargeUiRect(node) {
+				if (!node || getKonvaClassName(node) !== 'Rect') return false;
+				var width = typeof node.width === 'function' ? Number(node.width()) : 0;
+				var height = typeof node.height === 'function' ? Number(node.height()) : 0;
+				return width > 24 || height > 24;
+			}
+
+			function isArchiveMapHorizontalSeparator(node) {
+				if (!node || getKonvaClassName(node) !== 'Line' || typeof node.points !== 'function') return false;
+				var points = node.points();
+				if (!points || points.length < 4) return false;
+				var xSpan = Math.abs(Number(points[2]) - Number(points[0]));
+				var ySpan = Math.abs(Number(points[3]) - Number(points[1]));
+				return xSpan > 80 && ySpan <= 1.5;
+			}
+
+			function restyleArchiveMapDaySeparators(widgetInstance, isDark) {
+				var map = widgetInstance && widgetInstance.map;
+				if (!map) return;
+				var separatorColor = isDark ? '#9fb3c8' : '#6d7f91';
+				[map.lyrUI, map.lyrMap].forEach(function(layer) {
+					var didChange = false;
+					findKonvaNodes(layer).forEach(function(node) {
+						if (!isArchiveMapHorizontalSeparator(node)) return;
+						if (typeof node.stroke === 'function') {
+							node.stroke(separatorColor);
+						}
+						if (typeof node.strokeWidth === 'function') {
+							node.strokeWidth(1.8);
+						}
+						if (typeof node.opacity === 'function') {
+							node.opacity(isDark ? 0.92 : 0.86);
+						}
+						if (typeof node.strokeScaleEnabled === 'function') {
+							node.strokeScaleEnabled(false);
+						}
+						didChange = true;
+					});
+					if (didChange && layer && typeof layer.batchDraw === 'function') {
+						layer.batchDraw();
+					}
+				});
+			}
+
+			function restyleArchiveMapLegendBoxes(widgetInstance) {
+				var map = widgetInstance && widgetInstance.map;
+				if (!map || !map.lyrUI || !map.data) return;
+				var boxes = findKonvaNodes(map.lyrUI).filter(isArchiveMapLegendBox);
+				var keys = Object.keys(map.data);
+				boxes.forEach(function(box, index) {
+					var entry = map.data[keys[index]];
+					if (!entry || !entry.colors || typeof box.fill !== 'function') return;
+					var visible = entry.visible !== false;
+					box.fill(visible ? entry.colors.normal : 'rgba(0,0,0,0)');
+					if (typeof box.stroke === 'function') {
+						box.stroke(visible ? entry.colors.dark : '#7f93a7');
+					}
+				});
+			}
+
+			function findKonvaNodes(layer) {
+				if (!layer || typeof layer.find !== 'function') return [];
+				try {
+					return layer.find(function() { return true; });
+				} catch (e) {
+					return [];
+				}
+			}
+
+			function restyleArchiveMapForTheme(widgetInstance) {
+				if (!widgetInstance || !widgetInstance.map) return;
+				applyArchiveMapDataTypePalette(widgetInstance);
+				var isDark = (document.documentElement.getAttribute('data-theme') || ACTIVE_THEME) === 'dark';
+				var textColor = isDark ? '#dbe7f4' : '#142032';
+				var axisBackground = isDark ? '#0b1420' : '#ffffff';
+				var layers = [widgetInstance.map.lyrUI, widgetInstance.map.lyrMap];
+
+				layers.forEach(function(layer) {
+					findKonvaNodes(layer).forEach(function(node) {
+						var className = getKonvaClassName(node);
+						if (className === 'Tag' && typeof node.fill === 'function') {
+							node.fill('rgba(0,0,0,0)');
+							return;
+						}
+						if (className === 'Rect' && typeof node.fill === 'function') {
+							var rectFill = normalizeKonvaColor(node.fill());
+							var isThemeAxisRect = typeof node.getAttr === 'function' && node.getAttr('data-hydrophone-theme-axis');
+							if ((rectFill === '#ffffff' || rectFill === 'white' || isThemeAxisRect) && isArchiveMapLargeUiRect(node)) {
+								if (typeof node.setAttr === 'function') node.setAttr('data-hydrophone-theme-axis', true);
+								node.fill(axisBackground);
+							}
+							return;
+						}
+						if (className === 'Text' && typeof node.fill === 'function') {
+							if (typeof node.text === 'function') {
+								var cleanLegendText = formatArchiveMapLegendText(node.text());
+								if (cleanLegendText !== node.text()) {
+									node.text(cleanLegendText);
+								}
+							}
+							var textFill = normalizeKonvaColor(node.fill());
+							var isThemeText = typeof node.getAttr === 'function' && node.getAttr('data-hydrophone-theme-text');
+							if (
+								textFill === '#222222' ||
+								textFill === '#000000' ||
+								textFill === 'black' ||
+								textFill === '' ||
+								isThemeText
+							) {
+								if (typeof node.setAttr === 'function') node.setAttr('data-hydrophone-theme-text', true);
+								node.fill(textColor);
+							}
+						}
+					});
+					if (layer && typeof layer.batchDraw === 'function') {
+						layer.batchDraw();
+					}
+				});
+				restyleArchiveMapLegendBoxes(widgetInstance);
+				restyleArchiveMapDaySeparators(widgetInstance, isDark);
+
+				try {
+					findKonvaNodes(widgetInstance.map.lyrUI).forEach(function(node) {
+						if (
+							getKonvaClassName(node) !== 'Label' ||
+							typeof node.getAttr !== 'function' ||
+							typeof node.setAttr !== 'function' ||
+							node.getAttr('data-hydrophone-themed')
+						) return;
+						node.setAttr('data-hydrophone-themed', true);
+						var parent = typeof node.getParent === 'function' ? node.getParent() : null;
+						if (!parent || typeof parent.on !== 'function') return;
+						parent.on('mouseenter.hydrophoneTheme mouseleave.hydrophoneTheme click.hydrophoneTheme', function() {
+							setTimeout(function() {
+								restyleArchiveMapForTheme(widgetInstance);
+							}, 0);
+						});
+					});
+				} catch (e) {}
+			}
+
+			function attachArchiveMapStyleHooks(widgetInstance) {
+				var map = widgetInstance && widgetInstance.map;
+				if (!map || map.__hydrophoneStyleHooksAttached) return;
+				map.__hydrophoneStyleHooksAttached = true;
+				if (typeof map.updateZoom === 'function') {
+					var originalUpdateZoom = map.updateZoom;
+					map.updateZoom = function() {
+						var result = originalUpdateZoom.apply(this, arguments);
+						setTimeout(function() {
+							redrawArchiveMapWidget(widgetInstance);
+							restyleArchiveMapForTheme(widgetInstance);
+						}, 0);
+						return result;
+					};
+				}
+			}
+
+			function restyleArchiveMapsForTheme() {
+				if (!window.OncDW || !Array.isArray(window.OncDW._widgets)) return;
+				window.OncDW._widgets.forEach(function(widgetInstance) {
+					if (
+						widgetInstance &&
+						widgetInstance.dom &&
+						widgetInstance.dom.base &&
+						widgetInstance.dom.base.getAttribute('data-widget') === 'archiveMap'
+					) {
+						restyleArchiveMapForTheme(widgetInstance);
+					}
+				});
+			}
+			window.restyleArchiveMapsForTheme = restyleArchiveMapsForTheme;
+
+			function scheduleArchiveMapRedraws(widgetInstance) {
+				if (!widgetInstance || !widgetInstance.map) return;
+				sanitizeArchiveWidgetDownloads(widgetInstance);
+				patchArchiveMapTooltipDuration(widgetInstance);
+				attachArchiveMapStyleHooks(widgetInstance);
+				redrawArchiveMapWidget(widgetInstance);
+				restyleArchiveMapForTheme(widgetInstance);
+				if (typeof window.requestAnimationFrame === 'function') {
+					window.requestAnimationFrame(function() {
+						redrawArchiveMapWidget(widgetInstance);
+						restyleArchiveMapForTheme(widgetInstance);
+					});
+				}
+				setTimeout(function() {
+					redrawArchiveMapWidget(widgetInstance);
+					restyleArchiveMapForTheme(widgetInstance);
+				}, 80);
+				setTimeout(function() {
+					redrawArchiveMapWidget(widgetInstance);
+					restyleArchiveMapForTheme(widgetInstance);
+				}, 250);
+			}
+
+		function extendArchiveMapWidgetRange(widgetInstance) {
+			if (!widgetInstance || !widgetInstance.map || !widgetInstance.map.range) return;
+			var widget = widgetInstance.dom && widgetInstance.dom.base;
+			if (!widget || widget.getAttribute('data-widget') !== 'archiveMap') return;
+
+			var map = widgetInstance.map;
+			var desiredMax = getArchiveMapDesiredRangeMax(widgetInstance);
+			if (!Number.isFinite(desiredMax)) return;
+			if (Number(map.range.max || 0) >= desiredMax - 1000) return;
+
+			try {
+				map.range.max = desiredMax;
+				map.computeDayRanges();
+				map.zoomUpdateLayout();
+				if (map.lyrUI && typeof map.lyrUI.destroy === 'function' && typeof map.buildLayerUI === 'function') {
+					var stage = typeof map.lyrUI.getStage === 'function' ? map.lyrUI.getStage() : null;
+					if (stage) {
+						map.lyrUI.destroy();
+						map.lyrUI = map.buildLayerUI(map.layout, map.layout.row);
+						stage.add(map.lyrUI);
+					}
+				}
+				if (map.backMap && typeof map.backMap.rebuild === 'function') {
+					map.backMap.rebuild(map.layout.area, map.layout.row);
+				}
+				if (map.scrollbar && typeof map.scrollbar.update === 'function') {
+					var scrollX = 0;
+					if (map.lyrMap && typeof map.lyrMap.x === 'function') {
+						scrollX = Math.abs(map.lyrMap.x() || 0);
+					}
+					map.scrollbar.update(map.layout.area.w, scrollX);
+				}
+				widget.setAttribute('data-archive-map-extended', 'true');
+				scheduleArchiveMapRedraws(widgetInstance);
+			} catch (e) {
+				console.log('Archive map range extension failed:', e);
+			}
+		}
+
+		function refreshWidgetsWhenDetailsVisible() {
+			function recoverPass() {
+				window.dispatchEvent(new Event('resize'));
+				const recoverableWidgets = document.querySelectorAll('#details-tab-panel .oncWidget[data-widget="archiveFiles"], #details-tab-panel .oncWidget[data-widget="archiveMap"]');
+				recoverableWidgets.forEach(function(widget) {
+					if (widgetNeedsRecovery(widget)) {
+						recoverWidget(widget);
+					}
+				});
+			}
+
+			setTimeout(recoverPass, 220);
+			setTimeout(recoverPass, 1400);
+		}
+
+		function scanVisibleDetailWidgets() {
+			const containers = document.querySelectorAll('#details-tab-panel .widget-container');
+			containers.forEach(function(container, index) {
+				setTimeout(function() {
+					scanContainerWhenVisible(container);
+				}, index * 120);
+			});
+		}
+
+		// Add global error handler
+		window.addEventListener("error", function(e) {
+			console.log("Widget error caught and isolated:", e.message);
+			return true; // Prevent error from bubbling
+		});
+
+		document.addEventListener("hydrophone:details-visible", function() {
+			rescanDeferredContainers();
+			scanVisibleDetailWidgets();
+			refreshWidgetsWhenDetailsVisible();
+			patchWindowOpenForArchiveDownloads();
+			sanitizeAllArchiveDownloads();
+		});
+
+		document.addEventListener("OncWidgetDownloaded", function(event) {
+			try {
+				var detail = event && event.detail;
+				var idx = detail && detail.idx;
+				if (idx === undefined || !window.OncDW || !Array.isArray(window.OncDW._widgets)) return;
+				var widgetInstance = window.OncDW._widgets[idx];
+				if (!widgetInstance || !widgetInstance.dom || !widgetInstance.dom.base) return;
+				sanitizeArchiveWidgetDownloads(widgetInstance);
+				if (widgetInstance.dom.base.getAttribute('data-widget') !== 'archiveMap') return;
+				setTimeout(function() {
+					sanitizeArchiveWidgetDownloads(widgetInstance);
+					scheduleArchiveMapRedraws(widgetInstance);
+					finishArchiveMapRefresh(widgetInstance.dom.base);
+				}, 0);
+			} catch (e) {
+				console.log('Archive map post-processing failed:', e);
+			}
+		});
+
+		// Initialize widgets with error boundaries
+		document.addEventListener("DOMContentLoaded", function() {
+			patchWindowOpenForArchiveDownloads();
+			sanitizeAllArchiveDownloads();
+			document.addEventListener('click', function(event) {
+				var target = event.target;
+				var link = target && target.closest ? target.closest('a[href*="archivefiles"][href*="method=getFile"]') : null;
+				if (link) rewriteArchiveDownloadLink(link);
+			}, true);
+			if (typeof MutationObserver === 'function') {
+				var archiveDownloadObserver = new MutationObserver(function(mutations) {
+					mutations.forEach(function(mutation) {
+						if (mutation.type === 'childList') {
+							mutation.addedNodes.forEach(function(node) {
+								if (node && node.nodeType === 1) {
+									sanitizeAllArchiveDownloads(node);
+								}
+							});
+						} else if (
+							mutation.type === 'attributes' &&
+							mutation.target &&
+							mutation.target.matches &&
+							mutation.target.matches('a[href*="archivefiles"]')
+						) {
+							rewriteArchiveDownloadLink(mutation.target);
+						}
+					});
+				});
+				archiveDownloadObserver.observe(document.body, {
+					childList: true,
+					subtree: true,
+					attributes: true,
+					attributeFilter: ['href']
+				});
+			}
+
+			// Add progressive widget loading with delays
+			if (!isPublicDetailPage()) {
+				const widgetContainers = document.querySelectorAll(".widget-container");
+
+				widgetContainers.forEach(function(container, index) {
+					setTimeout(function() {
+						scanContainerWhenVisible(container);
+					}, index * 500); // Stagger widget loading
+				});
+			}
+
+			// Check for failed widgets and mark them
+			setTimeout(function() {
+				const widgets = document.querySelectorAll(".oncWidget");
+				widgets.forEach(function(widget) {
+					if (widget.innerHTML.trim() === "" || widget.textContent.includes("No data preview image could be found")) {
+						const errorDiv = document.createElement("div");
+						errorDiv.className = "widget-error-indicator";
+						errorDiv.textContent = "⚠ No data available for this widget";
+						widget.parentNode.insertBefore(errorDiv, widget.nextSibling);
+						widget.style.display = "none";
+					}
+				});
+			}, 12000);
+		});
+	})();
+
+	{% if show_public_notifications|default(dashboard_variant == 'public', true) %}
+	var PUBLIC_NOTIFICATIONS_SEEN_STORAGE_KEY = 'hydrophoneDashboard.publicNotificationsSeen.v1';
+	var publicNotificationsPayload = null;
+
+	function _getNotificationsElements() {
+		return {
+			dropdown: document.getElementById('notifications-dropdown'),
+			toggle: document.getElementById('notifications-toggle'),
+			panel: document.getElementById('notifications-panel'),
+			count: document.getElementById('notifications-count'),
+			title: document.getElementById('notifications-title'),
+			summary: document.getElementById('public-notifications-summary'),
+			list: document.getElementById('notifications-list')
+		};
+	}
+
+	function _getPublicNotificationId(notification) {
+		if (!notification) return '';
+		return notification.id || [
+			notification.locationCode || '',
+			notification.status || '',
+			notification.message || '',
+			notification.event_at || notification.first_seen || ''
+		].join('|');
+	}
+
+	function _readSeenPublicNotificationIds() {
+		try {
+			var raw = window.localStorage.getItem(PUBLIC_NOTIFICATIONS_SEEN_STORAGE_KEY);
+			var parsed = raw ? JSON.parse(raw) : [];
+			return new Set(Array.isArray(parsed) ? parsed : []);
+		} catch (e) {
+			return new Set();
+		}
+	}
+
+	function _writeSeenPublicNotificationIds(ids) {
+		try {
+			window.localStorage.setItem(PUBLIC_NOTIFICATIONS_SEEN_STORAGE_KEY, JSON.stringify(Array.from(ids)));
+		} catch (e) {}
+	}
+
+	function _pruneSeenPublicNotificationIds(activeIds) {
+		var active = new Set(activeIds || []);
+		var seen = _readSeenPublicNotificationIds();
+		var pruned = new Set();
+		seen.forEach(function(id) {
+			if (active.has(id)) pruned.add(id);
+		});
+		if (pruned.size !== seen.size) _writeSeenPublicNotificationIds(pruned);
+		return pruned;
+	}
+
+	function _readEmbeddedPublicNotifications() {
+		var script = document.getElementById('public-notifications-data');
+		if (!script) return { notifications: [], total: 0, today_count: 0, window_days: 7 };
+		try {
+			var parsed = JSON.parse(script.textContent || '{}');
+			return parsed && typeof parsed === 'object' ? parsed : { notifications: [], total: 0, today_count: 0, window_days: 7 };
+		} catch (e) {
+			return { notifications: [], total: 0, today_count: 0, window_days: 7 };
+		}
+	}
+
+	function _publicNotificationTitle(total, windowDays) {
+		if (!total) return 'No recent notifications';
+		return total + ' in last ' + windowDays + ' days';
+	}
+
+	function _isPublicNotificationToday(notification) {
+		if (notification && notification.is_today === true) return true;
+		var value = notification && (notification.event_at || notification.first_seen);
+		if (!value) return false;
+		var parsed = new Date(value);
+		if (isNaN(parsed.getTime())) return false;
+		var now = new Date();
+		return parsed.getFullYear() === now.getFullYear() &&
+			parsed.getMonth() === now.getMonth() &&
+			parsed.getDate() === now.getDate();
+	}
+
+	function _formatPublicNotificationTime(notification) {
+		var value = notification && (notification.event_at || notification.first_seen || '');
+		if (!value) return 'Unknown';
+		return String(value).slice(0, 16).replace('T', ' ');
+	}
+
+	function _setPublicNotificationState(total, unseen, todayCount, windowDays) {
+		var els = _getNotificationsElements();
+		if (els.count) {
+			els.count.textContent = String(unseen > 0 ? unseen : total);
+			els.count.classList.toggle('is-empty', unseen === 0);
+			els.count.title = unseen > 0 ? unseen + ' unseen notification' + (unseen !== 1 ? 's' : '') : total + ' recent notification' + (total !== 1 ? 's' : '');
+		}
+		if (els.title) {
+			els.title.textContent = _publicNotificationTitle(total, windowDays);
+		}
+		if (els.summary) {
+			els.summary.textContent = todayCount > 0
+				? todayCount + ' today'
+				: 'Updated with the dashboard refresh';
+		}
+		if (els.toggle) {
+			els.toggle.classList.toggle('has-unseen', unseen > 0);
+			els.toggle.classList.toggle('has-today', todayCount > 0);
+			els.toggle.setAttribute(
+				'aria-label',
+				unseen > 0
+					? unseen + ' unseen public notification' + (unseen !== 1 ? 's' : '')
+					: total + ' public notification' + (total !== 1 ? 's' : '')
+			);
+		}
+	}
+
+	function _renderPublicNotificationsEmpty(windowDays) {
+		var els = _getNotificationsElements();
+		if (!els.list) return;
+		els.list.innerHTML = '';
+		var empty = document.createElement('div');
+		empty.className = 'notifications-empty-state';
+		var copy = document.createElement('p');
+		copy.textContent = 'Nothing new has been detected in the last ' + windowDays + ' days.';
+		empty.appendChild(copy);
+		els.list.appendChild(empty);
+	}
+
+	function _renderPublicNotifications(payload) {
+		payload = payload || { notifications: [], total: 0, today_count: 0, window_days: 7 };
+		var notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
+		var windowDays = payload.window_days || 7;
+		publicNotificationsPayload = {
+			notifications: notifications,
+			total: notifications.length,
+			today_count: payload.today_count || 0,
+			window_days: windowDays
+		};
+
+		var activeIds = notifications.map(_getPublicNotificationId).filter(Boolean);
+		var seen = _pruneSeenPublicNotificationIds(activeIds);
+		var unseen = activeIds.filter(function(id) { return !seen.has(id); }).length;
+		var todayCount = typeof payload.today_count === 'number'
+			? payload.today_count
+			: notifications.filter(_isPublicNotificationToday).length;
+		_setPublicNotificationState(notifications.length, unseen, todayCount, windowDays);
+
+		var els = _getNotificationsElements();
+		if (!els.list) return;
+		if (notifications.length === 0) {
+			_renderPublicNotificationsEmpty(windowDays);
+			return;
+		}
+
+		var statusColors = { critical: '#dc3545', error: '#dc3545', warning: '#fd7e14', minor: '#ffc107' };
+		var statusIcons = { critical: '✗', error: '!', warning: '!', minor: '!' };
+		els.list.innerHTML = '';
+		notifications.forEach(function(notification) {
+			var status = notification.status || 'unknown';
+			var notificationId = _getPublicNotificationId(notification);
+			var item = document.createElement('div');
+			item.className = 'new-issue-item notifications-issue-item public-notification-item';
+			item.dataset.notificationId = notificationId;
+			item.classList.toggle('is-unseen', !!notificationId && !seen.has(notificationId));
+			item.style.borderLeft = '4px solid ' + (statusColors[status] || '#6c757d');
+
+			var severity = document.createElement('div');
+			severity.className = 'issue-severity';
+			severity.style.backgroundColor = (statusColors[status] || '#6c757d');
+			severity.textContent = (statusIcons[status] || '?') + ' ' + String(status).toUpperCase();
+			item.appendChild(severity);
+
+			var details = document.createElement('div');
+			details.className = 'issue-details';
+
+			var link = document.createElement('button');
+			link.type = 'button';
+			link.className = 'issue-location-link';
+			link.textContent = notification.locationCode || 'Unknown';
+			link.setAttribute('data-open-detail-location', notification.locationCode || '');
+			details.appendChild(link);
+
+			var message = document.createElement('span');
+			message.className = 'issue-message';
+			message.textContent = notification.message || '';
+			details.appendChild(message);
+
+			var since = document.createElement('span');
+			since.className = 'issue-since';
+			if (_isPublicNotificationToday(notification)) {
+				var today = document.createElement('span');
+				today.className = 'public-notification-today';
+				today.textContent = 'Today';
+				since.appendChild(today);
+			}
+			since.appendChild(document.createTextNode('Since: ' + _formatPublicNotificationTime(notification)));
+			details.appendChild(since);
+
+			item.appendChild(details);
+			els.list.appendChild(item);
+		});
+	}
+
+	function markPublicNotificationsSeen() {
+		var notifications = publicNotificationsPayload && Array.isArray(publicNotificationsPayload.notifications)
+			? publicNotificationsPayload.notifications
+			: [];
+		var ids = notifications.map(_getPublicNotificationId).filter(Boolean);
+		_writeSeenPublicNotificationIds(new Set(ids));
+		_renderPublicNotifications(publicNotificationsPayload);
+	}
+
+	function _setNotificationsPanelOpen(isOpen) {
+		var els = _getNotificationsElements();
+		if (!els.panel || !els.toggle) return;
+		els.panel.hidden = !isOpen;
+		els.toggle.setAttribute('aria-expanded', String(!!isOpen));
+		els.dropdown && els.dropdown.classList.toggle('is-open', !!isOpen);
+		document.body && document.body.classList.toggle('notifications-layer-open', !!isOpen);
+		if (isOpen) markPublicNotificationsSeen();
+	}
+
+	function closeNotificationsPanel() {
+		_setNotificationsPanelOpen(false);
+	}
+
+	function togglePublicNotificationsPanel(event) {
+		if (event) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+		var els = _getNotificationsElements();
+		if (!els.panel || !els.toggle) return;
+		var isOpen = els.toggle.getAttribute('aria-expanded') === 'true';
+		_setNotificationsPanelOpen(!isOpen);
+	}
+
+	function refreshPublicNotifications() {
+		fetch(buildDashboardUrl('/api/public-notifications'))
+			.then(function(resp) { return resp.json(); })
+			.then(function(data) {
+				if (!data || !Array.isArray(data.notifications)) return;
+				_renderPublicNotifications(data);
+			})
+			.catch(function() {});
+	}
+
+	function initPublicNotifications() {
+		_renderPublicNotifications(_readEmbeddedPublicNotifications());
+		refreshPublicNotifications();
+		document.addEventListener('click', function(event) {
+			var els = _getNotificationsElements();
+			if (!els.dropdown || !els.panel || els.panel.hidden) return;
+			if (els.dropdown.contains(event.target)) return;
+			closeNotificationsPanel();
+		});
+		document.addEventListener('keydown', function(event) {
+			if (event.key === 'Escape') closeNotificationsPanel();
+		});
+	}
+	{% endif %}
+
+	{% if show_issue_management %}
+	// Dismiss / Refresh functionality
+	function _getNotificationsElements() {
+		return {
+			dropdown: document.getElementById('notifications-dropdown'),
+			toggle: document.getElementById('notifications-toggle'),
+			panel: document.getElementById('notifications-panel'),
+			count: document.getElementById('notifications-count'),
+			title: document.getElementById('notifications-title'),
+			list: document.getElementById('notifications-list'),
+			dismissAll: document.getElementById('notifications-dismiss-all')
+		};
+	}
+
+	function _setNotificationsPanelOpen(isOpen) {
+		var els = _getNotificationsElements();
+		if (!els.panel || !els.toggle) return;
+		els.panel.hidden = !isOpen;
+		els.toggle.setAttribute('aria-expanded', String(!!isOpen));
+		els.dropdown && els.dropdown.classList.toggle('is-open', !!isOpen);
+		document.body && document.body.classList.toggle('notifications-layer-open', !!isOpen);
+	}
+
+	function closeNotificationsPanel() {
+		_setNotificationsPanelOpen(false);
+	}
+
+	function toggleNotificationsPanel(event) {
+		if (event) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+		var els = _getNotificationsElements();
+		if (!els.panel || !els.toggle) return;
+		var isOpen = els.toggle.getAttribute('aria-expanded') === 'true';
+		_setNotificationsPanelOpen(!isOpen);
+	}
+
+	function _notificationTitle(count) {
+		if (!count) return 'No active notifications';
+		return count + ' notification' + (count !== 1 ? 's' : '');
+	}
+
+	function _setNotificationCount(count) {
+		var els = _getNotificationsElements();
+		if (!els.count || !els.title) return;
+		els.count.textContent = String(count);
+		els.count.classList.toggle('is-empty', count === 0);
+		els.title.textContent = _notificationTitle(count);
+		if (els.dismissAll) {
+			els.dismissAll.hidden = count === 0;
+		}
+	}
+
+	function _renderNotificationsEmptyState() {
+		var els = _getNotificationsElements();
+		if (!els.list) return;
+		els.list.innerHTML = '';
+		var empty = document.createElement('div');
+		empty.className = 'notifications-empty-state';
+		empty.innerHTML = '<strong>No active notifications</strong><p>All hydrophone issues have been reviewed or resolved.</p>';
+		els.list.appendChild(empty);
+		_setNotificationCount(0);
+	}
+
+	function _visibleNotificationCount() {
+		var els = _getNotificationsElements();
+		if (!els.list) return 0;
+		return els.list.querySelectorAll('.new-issue-item').length;
+	}
+
+	function dismissIssue(locationCode, btn) {
+		fetch(buildDashboardUrl('/api/dismiss'), {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({locationCode: locationCode})
+		}).then(function(resp) {
+			if (resp.ok) {
+				var item = btn.closest('.new-issue-item');
+				if (item) item.remove();
+				var count = _visibleNotificationCount();
+				if (count === 0) {
+					_renderNotificationsEmptyState();
+				} else {
+					_setNotificationCount(count);
+				}
+			}
+		}).catch(function(e) { console.log('Dismiss failed (server may not be running):', e); });
+	}
+
+	function dismissAllIssues() {
+		fetch(buildDashboardUrl('/api/dismiss-all'), {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'}
+		}).then(function(resp) {
+			if (resp.ok) {
+				_renderNotificationsEmptyState();
+			}
+		}).catch(function(e) { console.log('Dismiss all failed:', e); });
+	}
+
+	function _renderNewIssues(issues) {
+		var els = _getNotificationsElements();
+		if (!els.list) return;
+		if (!issues || issues.length === 0) {
+			_renderNotificationsEmptyState();
+			return;
+		}
+
+		var statusColors = { critical: '#dc3545', error: '#dc3545', warning: '#fd7e14', minor: '#ffc107' };
+		var statusIcons = { critical: '✗', error: '⛔', warning: '⚠', minor: '⚠' };
+		els.list.innerHTML = '';
+		_setNotificationCount(issues.length);
+		issues.forEach(function(issue) {
+			var status = issue.status || 'unknown';
+			var item = document.createElement('div');
+			item.className = 'new-issue-item';
+			item.id = 'issue-' + String(issue.locationCode || '').replace(/\./g, '-');
+			item.style.borderLeft = '4px solid ' + (statusColors[status] || '#6c757d');
+
+			var severity = document.createElement('div');
+			severity.className = 'issue-severity';
+			severity.style.backgroundColor = (statusColors[status] || '#6c757d');
+			severity.textContent = (statusIcons[status] || '?') + ' ' + String(status).toUpperCase();
+			item.appendChild(severity);
+
+			var details = document.createElement('div');
+			details.className = 'issue-details';
+			var link = document.createElement('button');
+			link.type = 'button';
+			link.className = 'issue-location-link';
+			link.textContent = issue.locationCode || 'Unknown';
+			link.setAttribute('data-open-detail-location', issue.locationCode || '');
+			details.appendChild(link);
+
+			var message = document.createElement('span');
+			message.className = 'issue-message';
+			message.textContent = issue.message || '';
+			details.appendChild(message);
+
+			var since = document.createElement('span');
+			since.className = 'issue-since';
+			var firstSeen = issue.first_seen || '';
+			if (firstSeen) firstSeen = firstSeen.slice(0, 16).replace('T', ' ');
+			since.textContent = 'Since: ' + (firstSeen || 'Unknown');
+			details.appendChild(since);
+
+			item.appendChild(details);
+
+			var dismiss = document.createElement('button');
+			dismiss.className = 'dismiss-btn';
+			dismiss.title = 'Dismiss this alert';
+			dismiss.textContent = '✕';
+			dismiss.onclick = function() { dismissIssue(issue.locationCode, dismiss); };
+			item.appendChild(dismiss);
+
+			els.list.appendChild(item);
+		});
+	}
+
+	function refreshNewIssues() {
+		fetch(buildDashboardUrl('/api/issues'))
+			.then(function(resp) { return resp.json(); })
+			.then(function(data) {
+				if (!data || !Array.isArray(data.issues)) return;
+				_renderNewIssues(data.issues);
+			})
+			.catch(function(e) { console.log('Failed to refresh new issues:', e); });
+	}
+
+	document.addEventListener('click', function(event) {
+		var els = _getNotificationsElements();
+		if (!els.dropdown || !els.panel || els.panel.hidden) return;
+		if (els.dropdown.contains(event.target)) return;
+		closeNotificationsPanel();
+	});
+
+	document.addEventListener('keydown', function(event) {
+		if (event.key === 'Escape') {
+			closeNotificationsPanel();
+		}
+	});
+	{% endif %}
+
+	function _stopPublicRefreshPolling() {
+		if (!publicRefreshPollTimer) return;
+		clearInterval(publicRefreshPollTimer);
+		publicRefreshPollTimer = null;
+	}
+
+	function _startPublicRefreshPolling(previousUpdatedAt) {
+		var baselineUpdatedAt = previousUpdatedAt || '';
+
+		function pollOnce() {
+			fetch(buildDashboardUrl('/api/runtime-status'))
+				.then(function(resp) { return resp.json(); })
+				.then(function(data) {
+					if (!data || data.status !== 'ok') return;
+					_applyRuntimeStatus(data);
+					var refresh = data.refresh || {};
+					var baselineMs = _isoToMs(baselineUpdatedAt);
+					var finishedMs = _isoToMs(refresh.last_finished_at || '');
+
+					if (refresh.last_status === 'running') {
+						_setManualRefreshState(true, refresh.progress_pct, refresh.progress_message);
+						_renderPublicRefreshButton(data.public_refresh || null, refresh);
+						_renderOperatorRefreshControls(refresh);
+						_setRefreshProgressIndicator(_formatRefreshProgressSummary(refresh), true, false);
+						return;
+					}
+
+					if (
+						refresh.last_status === 'ok'
+						&& !isNaN(finishedMs)
+						&& (isNaN(baselineMs) || finishedMs > baselineMs)
+					) {
+						_setManualRefreshState(false, 0, '');
+						_stopPublicRefreshPolling();
+						_renderPublicRefreshButton(data.public_refresh || null, refresh);
+						_renderOperatorRefreshControls(refresh);
+						_setRefreshProgressIndicator('refresh complete. Reloading...', false, false);
+						_setLastUpdatedIndicator(refresh.last_finished_at || new Date().toISOString(), false);
+						setTimeout(function() { window.location.reload(); }, 700);
+						return;
+					}
+
+					if (refresh.last_status === 'error' && refresh.last_error) {
+						_setManualRefreshState(false, 0, '');
+						_stopPublicRefreshPolling();
+						_renderPublicRefreshButton(data.public_refresh || null, refresh);
+						_renderOperatorRefreshControls(refresh);
+						_setLastUpdatedIndicator(baselineUpdatedAt, false);
+						_setRefreshProgressIndicator(refresh.last_error, false, true);
+						_hideRefreshProgressIndicator(10000);
+					}
+				})
+				.catch(function() {});
+		}
+
+		_stopPublicRefreshPolling();
+		pollOnce();
+		publicRefreshPollTimer = setInterval(pollOnce, 5000);
+	}
+
+	function requestPublicRefresh() {
+		var btn = document.getElementById('public-refresh-btn');
+		if (!btn || btn.disabled || manualRefreshInProgress || !isPublicDashboardPage()) return;
+
+		var lastUpdatedEl = document.getElementById('last-updated-indicator');
+		var previousUpdatedAt = lastUpdatedEl ? (lastUpdatedEl.getAttribute('data-updated-at') || '') : '';
+		_setManualRefreshState(true, 0, 'Requesting refresh...');
+		_renderPublicRefreshButton(null, null);
+		_renderOperatorRefreshControls(null);
+		_setLastUpdatedIndicator(previousUpdatedAt, true);
+		_setRefreshProgressIndicator('requesting refresh...', true, false);
+
+		function finishWithError(message, publicRefresh) {
+			_setManualRefreshState(false, 0, '');
+			_renderPublicRefreshButton(publicRefresh || null, null);
+			_renderOperatorRefreshControls(null);
+			_setLastUpdatedIndicator(previousUpdatedAt, false);
+			_setRefreshProgressIndicator(message || 'refresh failed', false, true);
+			_hideRefreshProgressIndicator(10000);
+		}
+
+		fetch(buildDashboardUrl('/api/refresh'), { method: 'POST' })
+			.then(function(resp) {
+				return resp.json()
+					.then(function(data) {
+						return { ok: resp.ok, status: resp.status, data: data || {} };
+					})
+					.catch(function() {
+						return { ok: resp.ok, status: resp.status, data: {} };
+					});
+			})
+			.then(function(result) {
+				var data = result.data || {};
+				if (result.ok) {
+					_setManualRefreshState(true, 0, 'Refresh in progress...');
+					_renderPublicRefreshButton(data.public_refresh || null, null);
+					_setRefreshProgressIndicator('refresh in progress...', true, false);
+					_startPublicRefreshPolling(previousUpdatedAt);
+					return;
+				}
+				if (result.status === 409 && data.status === 'already_refreshing') {
+					_setManualRefreshState(true, 0, 'Another refresh is already running...');
+					_renderPublicRefreshButton(data.public_refresh || null, null);
+					_setRefreshProgressIndicator('another refresh is already running...', true, false);
+					_startPublicRefreshPolling(previousUpdatedAt);
+					return;
+				}
+				if (result.status === 429 && data.status === 'rate_limited') {
+					finishWithError(data.message || 'refresh is temporarily rate-limited', data.public_refresh);
+					return;
+				}
+				finishWithError(data.message || 'refresh failed', data.public_refresh);
+			})
+			.catch(function(e) {
+				finishWithError(e.message || 'refresh failed');
+			});
+	}
+
+	{% if show_issue_management %}
+	function refreshDashboard() {
+			var btn = document.getElementById('refresh-action-btn');
+			if (!btn || manualRefreshInProgress) return;
+			var lastUpdatedEl = document.getElementById('last-updated-indicator');
+			var previousUpdatedAt = lastUpdatedEl ? (lastUpdatedEl.getAttribute('data-updated-at') || '') : '';
+			_setManualRefreshState(true, 0, 'Connecting...');
+			closeActionsMenu();
+			_renderOperatorRefreshControls(null);
+			_setLastUpdatedIndicator(previousUpdatedAt, true);
+			_setRefreshProgressIndicator('0% connecting...', true, false);
+			var failed = false;
+
+			function showRefreshError(message) {
+				if (failed) return;
+				failed = true;
+				_setManualRefreshState(false, 0, '');
+				_renderOperatorRefreshControls(null);
+				_setLastUpdatedIndicator(previousUpdatedAt, false);
+				_setRefreshProgressIndicator(message || 'refresh failed', false, true);
+				_hideRefreshProgressIndicator(8000);
+			}
+
+			// Open SSE stream for progress updates
+			var evtSource = new EventSource(buildDashboardUrl('/api/refresh/progress'));
+			var sawProgress = false;
+			evtSource.onmessage = function(event) {
+				try {
+					var d = JSON.parse(event.data);
+					sawProgress = true;
+					var pct = parseInt(d.pct, 10);
+					if (isNaN(pct)) pct = 0;
+					var msg = d.message || 'Refreshing...';
+					_setManualRefreshState(true, pct, msg);
+					_renderOperatorRefreshControls(null);
+					_setRefreshProgressIndicator(pct + '% ' + msg, true, false);
+					if (pct >= 100) {
+						evtSource.close();
+						_setManualRefreshState(false, 0, '');
+						_renderOperatorRefreshControls(null);
+						_setRefreshProgressIndicator('100% complete. Reloading...', false, false);
+						_setLastUpdatedIndicator(new Date().toISOString(), false);
+						refreshNewIssues();
+						setTimeout(function() { window.location.reload(); }, 500);
+					}
+				} catch(e) {}
+			};
+			evtSource.onerror = function() {
+				evtSource.close();
+				if (!sawProgress && !failed) {
+					_setRefreshProgressIndicator('waiting for refresh updates...', true, false);
+				}
+			};
+
+			// Trigger refresh in parallel with SSE so updates are visible throughout the run
+			fetch(buildDashboardUrl('/api/refresh'), { method: 'POST' })
+				.then(function(resp) {
+					return resp.json()
+						.then(function(data) {
+							return { ok: resp.ok, status: resp.status, data: data || {} };
+						})
+						.catch(function() {
+							return { ok: resp.ok, status: resp.status, data: {} };
+						});
+				})
+					.then(function(result) {
+						if (result.ok) {
+							if (!sawProgress) {
+								_setManualRefreshState(false, 0, '');
+								_renderOperatorRefreshControls(null);
+								_setRefreshProgressIndicator('100% complete. Reloading...', false, false);
+								_setLastUpdatedIndicator(new Date().toISOString(), false);
+								refreshNewIssues();
+								setTimeout(function() { window.location.reload(); }, 500);
+								return;
+							}
+							setTimeout(function() {
+								if (!manualRefreshInProgress) return;
+								evtSource.close();
+								_setManualRefreshState(false, 0, '');
+								_renderOperatorRefreshControls(null);
+								_setRefreshProgressIndicator('refresh complete. Reloading...', false, false);
+								_setLastUpdatedIndicator(new Date().toISOString(), false);
+								refreshNewIssues();
+								window.location.reload();
+							}, 1200);
+							return;
+						}
+						if (result.status === 409 && result.data && result.data.status === 'already_refreshing') {
+							_setManualRefreshState(false, 0, '');
+							_renderOperatorRefreshControls(null);
+							_setRefreshProgressIndicator('another refresh is already running...', true, false);
+							pollRuntimeStatusOnce();
+							return;
+						}
+						evtSource.close();
+						showRefreshError((result.data && result.data.message) || 'refresh failed');
+				})
+				.catch(function() {
+					evtSource.close();
+					showRefreshError('server unreachable');
+					alert('Server not running.\n\nTo start the server, run:\n  python Hydrophone.py\n\nOr to regenerate without the server:\n  python Hydrophone.py --no-serve');
+				});
+		}
+	{% endif %}
+
+	function launchVerificationApp(dataDir, btnOverride) {
+		if (!canUseVerificationTools()) return;
+		var btn = btnOverride || document.getElementById('verification-action-btn');
+		if (!btn || btn.classList.contains('launching')) return;
+		closeActionsMenu();
+		var originalText = btn.getAttribute('data-default-text') || btn.textContent;
+		btn.setAttribute('data-default-text', originalText);
+		btn.classList.add('launching');
+		btn.textContent = '⏳ Launching...';
+
+		var payload = dataDir ? JSON.stringify({ data_dir: dataDir }) : null;
+		var headers = payload ? { 'Content-Type': 'application/json' } : {};
+
+		fetch(buildDashboardUrl('/api/verification/launch'), {
+			method: 'POST',
+			headers: headers,
+			body: payload
+		})
+			.then(function(resp) { return resp.json(); })
+			.then(function(data) {
+				btn.classList.remove('launching');
+				btn.textContent = originalText;
+				if (data.status === 'disabled') {
+					alert('Verification app is disabled. Set ENABLE_VERIFICATION_APP=true in .env');
+					return;
+				}
+				if (data.status === 'not_installed') {
+					alert(data.message || 'Verification app not installed.');
+					return;
+				}
+				// Give the Dash app a moment to boot if just started
+				var delay = data.status === 'started' ? 2000 : 200;
+				setTimeout(function() { window.open(data.url, '_blank'); }, delay);
+			})
+			.catch(function() {
+				btn.classList.remove('launching');
+				btn.textContent = originalText;
+				alert('Could not reach the dashboard server.');
+			});
+	}
+
+	var cacheAnalyzeTimer = null;
+
+	function openCacheModal() {
+		if (!canUseVerificationTools()) return;
+		closeActionsMenu();
+		var modal = document.getElementById('cache-modal');
+		if (modal) modal.style.display = 'flex';
+		showCacheProgress(false);
+		var summary = document.getElementById('cache-analysis-summary');
+		if (summary) summary.textContent = 'Run analysis to see counts.';
+		var list = document.getElementById('cache-label-list');
+		if (list) list.innerHTML = '';
+		var copyBtn = document.getElementById('cache-copy-btn');
+		if (copyBtn) copyBtn.disabled = true;
+		var analyzeBtn = document.getElementById('cache-analyze-btn');
+		if (analyzeBtn) {
+			analyzeBtn.disabled = false;
+			analyzeBtn.classList.remove('loading');
+		}
+		loadCacheConfig();
+		var includeVerified = document.getElementById('cache-include-verified');
+		var includeAudio = document.getElementById('cache-include-audio');
+		if (includeVerified && !includeVerified.dataset.cacheBound) {
+			includeVerified.addEventListener('change', scheduleSelectionRecalc);
+			includeVerified.dataset.cacheBound = 'true';
+		}
+		if (includeAudio && !includeAudio.dataset.cacheBound) {
+			includeAudio.addEventListener('change', scheduleSelectionRecalc);
+			includeAudio.dataset.cacheBound = 'true';
+		}
+	}
+
+	function closeCacheModal() {
+		var modal = document.getElementById('cache-modal');
+		if (modal) modal.style.display = 'none';
+	}
+
+	function loadCacheConfig() {
+		fetch(buildDashboardUrl('/api/verification/cache/config'))
+			.then(function(resp) { return resp.json(); })
+			.then(function(data) {
+				if (!data || data.status !== 'ok') return;
+				var cfg = data.config || {};
+				document.getElementById('cache-shared-dir').value = cfg.shared_data_dir || '';
+				document.getElementById('cache-local-dir').value = cfg.local_cache_dir || '';
+				document.getElementById('cache-target-date').value = cfg.target_date || 'latest';
+				document.getElementById('cache-global-threshold').value = cfg.global_threshold || 0.8;
+				document.getElementById('cache-include-verified').checked = !!cfg.include_verified;
+				document.getElementById('cache-include-audio').checked = cfg.include_audio !== false;
+				document.getElementById('cache-transfer-method').value = cfg.transfer_method || 'copy';
+				document.getElementById('cache-transfer-workers').value = cfg.transfer_workers || 4;
+				var thresholds = cfg.class_thresholds || {};
+				document.getElementById('cache-class-thresholds').value = JSON.stringify(thresholds, null, 2);
+			})
+			.catch(function() {});
+	}
+
+	function setAnalyzeLoading(isLoading, message) {
+		var btn = document.getElementById('cache-analyze-btn');
+		var summary = document.getElementById('cache-analysis-summary');
+		if (btn) {
+			btn.disabled = !!isLoading;
+			btn.classList.toggle('loading', !!isLoading);
+		}
+		if (summary && message) summary.textContent = message;
+	}
+
+	function _parseThresholdsJson() {
+		var raw = document.getElementById('cache-class-thresholds').value || '';
+		if (!raw.trim()) return {};
+		try {
+			var parsed = JSON.parse(raw);
+			if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) return {};
+			return parsed;
+		} catch (e) {
+			alert('Per-class thresholds must be valid JSON.');
+			return null;
+		}
+	}
+
+	function _buildCachePayload(selection) {
+		var thresholds = _parseThresholdsJson();
+		if (thresholds === null) return null;
+		var payload = {
+			shared_data_dir: document.getElementById('cache-shared-dir').value,
+			local_cache_dir: document.getElementById('cache-local-dir').value,
+			target_date: document.getElementById('cache-target-date').value || 'latest',
+			global_threshold: parseFloat(document.getElementById('cache-global-threshold').value || '0.8'),
+			include_verified: document.getElementById('cache-include-verified').checked,
+			include_audio: document.getElementById('cache-include-audio').checked,
+			transfer_method: document.getElementById('cache-transfer-method').value,
+			transfer_workers: parseInt(document.getElementById('cache-transfer-workers').value || '4', 10),
+			class_thresholds: thresholds
+		};
+		if (selection) {
+			if (selection.selected_devices) payload.selected_devices = selection.selected_devices;
+			if (selection.selected_labels_by_device) payload.selected_labels_by_device = selection.selected_labels_by_device;
+			if (selection.selected_labels) payload.selected_labels = selection.selected_labels;
+		}
+		return payload;
+	}
+
+	function analyzeCache(selection) {
+		var copyBtn = document.getElementById('cache-copy-btn');
+		if (copyBtn) copyBtn.disabled = true;
+		var payload = _buildCachePayload(selection);
+		if (!payload) {
+			setAnalyzeLoading(false);
+			return;
+		}
+		var dateHint = payload.target_date || 'latest';
+		setAnalyzeLoading(true, 'Analyzing ' + dateHint + '…');
+		fetch(buildDashboardUrl('/api/verification/cache/analyze'), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload)
+		})
+			.then(function(resp) {
+				if (!resp.ok) throw new Error('Analyze request failed');
+				return resp.json();
+			})
+			.then(function(data) {
+				setAnalyzeLoading(false);
+				if (!data || data.status !== 'ok') {
+					setAnalyzeLoading(false, data.message || 'Analysis failed.');
+					return;
+				}
+				var preserve = selection !== undefined;
+				renderCacheAnalysis(data, preserve);
+			})
+			.catch(function() {
+				setAnalyzeLoading(false, 'Could not reach the dashboard server.');
+			});
+	}
+
+	function renderCacheAnalysis(data, preserveSelection) {
+		var summary = document.getElementById('cache-analysis-summary');
+		var copyBtn = document.getElementById('cache-copy-btn');
+		window.cacheAnalysisData = data || null;
+		if (copyBtn) copyBtn.disabled = false;
+		if (!preserveSelection) {
+			renderCacheLabels(data.device_label_counts || {}, data.device_counts_threshold || {});
+		}
+		updateCacheSelectionSummary();
+	}
+
+	function computeSelectionSummary(data, selection) {
+		var summary = {
+			items_selected: 0,
+			files_total: 0,
+			file_counts: { audio: 0, spectrogram_mat: 0, spectrogram_image: 0, other: 0 },
+			bytes_total: 0,
+			bytes_by_type: { audio: 0, spectrogram_mat: 0, spectrogram_image: 0, other: 0 }
+		};
+		if (!data || !data.item_summaries) return summary;
+
+		var includeVerified = document.getElementById('cache-include-verified').checked;
+		var includeAudio = document.getElementById('cache-include-audio').checked;
+		var samples = data.sample_sizes || {};
+		var selectedDevices = (selection && selection.selected_devices) || [];
+		var labelsByDevice = (selection && selection.selected_labels_by_device) || {};
+		var hasSelection = selection && selection.any_checked;
+		if (!hasSelection) return summary;
+
+		var seenAll = new Set();
+		var seenByType = {
+			audio: new Set(),
+			spectrogram_mat: new Set(),
+			spectrogram_image: new Set(),
+			other: new Set()
+		};
+
+		data.item_summaries.forEach(function(item) {
+			var device = item.device || 'Unknown';
+			if (hasSelection && selectedDevices.indexOf(device) === -1) return;
+
+			var labels = item.labels || [];
+			var verified = !!item.verified;
+			var include = false;
+
+			if (includeVerified && verified) {
+				include = true;
+			} else if (labels.length) {
+				if (!hasSelection) {
+					include = true;
+				} else {
+					var deviceLabels = labelsByDevice[device] || [];
+					for (var i = 0; i < labels.length; i++) {
+						if (deviceLabels.indexOf(labels[i]) !== -1) {
+							include = true;
+							break;
+						}
+					}
+				}
+			}
+
+			if (!include) return;
+
+			summary.items_selected += 1;
+			if (item.file_keys && item.file_keys.length) {
+				item.file_keys.forEach(function(entry) {
+					var ftype = entry.type || 'other';
+					if (!includeAudio && ftype === 'audio') return;
+					var key = entry.key || '';
+					var compound = ftype + '|' + key;
+					if (!key) return;
+					seenAll.add(compound);
+					if (seenByType[ftype]) seenByType[ftype].add(compound);
+				});
+			} else {
+				(item.file_types || []).forEach(function(ftype) {
+					if (!includeAudio && ftype === 'audio') return;
+					var compound = ftype + '|item:' + summary.items_selected;
+					seenAll.add(compound);
+					if (seenByType[ftype]) seenByType[ftype].add(compound);
+				});
+			}
+		});
+
+		Object.keys(seenByType).forEach(function(ftype) {
+			var count = seenByType[ftype].size;
+			summary.file_counts[ftype] = count;
+			var bytes = (samples[ftype] || 0) * count;
+			summary.bytes_by_type[ftype] = bytes;
+			summary.bytes_total += bytes;
+			summary.files_total += count;
+		});
+
+		return summary;
+	}
+
+	function updateCacheSelectionSummary() {
+		var data = window.cacheAnalysisData;
+		if (!data) return;
+		var selection = getCacheSelection();
+		var computed = computeSelectionSummary(data, selection);
+		var summary = document.getElementById('cache-analysis-summary');
+		var copyBtn = document.getElementById('cache-copy-btn');
+		if (summary) {
+			var size = formatBytes(computed.bytes_total || 0);
+			var counts = computed.file_counts || {};
+			var audioCount = counts.audio || 0;
+			var matCount = counts.spectrogram_mat || 0;
+			var imgCount = counts.spectrogram_image || 0;
+			var otherCount = counts.other || 0;
+			var audioSize = formatBytes((computed.bytes_by_type || {}).audio || 0);
+			var sizeNote = data.size_estimated ? ' (estimated)' : '';
+			var missingText = data.missing_files === null || data.missing_files === undefined
+				? 'n/a'
+				: data.missing_files;
+			summary.innerHTML =
+				'Date: ' + (data.date || 'latest') +
+				' · Total items: ' + (data.total_items || 0) +
+				' · Above threshold: ' + (data.items_above_threshold || 0) +
+				' · Selected: ' + (computed.items_selected || 0) +
+				'<br>Files: ' + (computed.files_total || 0) +
+				' (audio: ' + audioCount + ', mat: ' + matCount + ', images: ' + imgCount + ', other: ' + otherCount + ')' +
+				'<br>Size: ' + size + sizeNote + ' (audio: ' + audioSize + ')' +
+				' · Missing: ' + missingText;
+		}
+		if (copyBtn) copyBtn.disabled = computed.items_selected === 0;
+	}
+
+	function updateDeviceCheckboxState(deviceCheckbox, labelContainer) {
+		if (!deviceCheckbox || !labelContainer) return;
+		var labelInputs = labelContainer.querySelectorAll('input[data-label]');
+		var checked = 0;
+		labelInputs.forEach(function(input) { if (input.checked) checked++; });
+		deviceCheckbox.indeterminate = checked > 0 && checked < labelInputs.length;
+		deviceCheckbox.checked = checked > 0 && checked === labelInputs.length;
+	}
+
+	function renderCacheLabels(deviceLabelCounts, deviceCounts) {
+		var list = document.getElementById('cache-label-list');
+		if (!list) return;
+		list.innerHTML = '';
+		var existing = getCacheSelection();
+		var existingByDevice = existing.selected_labels_by_device || {};
+		var devices = Object.keys(deviceLabelCounts || {}).sort(function(a, b) {
+			return (deviceCounts[b] || 0) - (deviceCounts[a] || 0);
+		});
+		devices.forEach(function(device) {
+			var labels = deviceLabelCounts[device] || {};
+			var labelKeys = Object.keys(labels || {}).sort(function(a, b) {
+				return (labels[b] || 0) - (labels[a] || 0);
+			});
+			if (!labelKeys.length) return;
+
+			var group = document.createElement('div');
+			group.className = 'cache-device-group';
+
+			var header = document.createElement('div');
+			header.className = 'cache-device-header';
+
+			var deviceLabel = document.createElement('label');
+			deviceLabel.className = 'cache-device-toggle';
+			var deviceCheckbox = document.createElement('input');
+			deviceCheckbox.type = 'checkbox';
+			deviceCheckbox.className = 'cache-device-checkbox';
+			deviceCheckbox.setAttribute('data-device', device);
+			deviceLabel.appendChild(deviceCheckbox);
+			var deviceName = document.createElement('span');
+			deviceName.className = 'cache-device-name';
+			deviceName.textContent = ' ' + device;
+			deviceLabel.appendChild(deviceName);
+			header.appendChild(deviceLabel);
+
+			var deviceCount = document.createElement('span');
+			deviceCount.className = 'cache-label-count';
+			deviceCount.textContent = (deviceCounts && deviceCounts[device] !== undefined) ? deviceCounts[device] : '';
+			header.appendChild(deviceCount);
+			group.appendChild(header);
+
+			var labelContainer = document.createElement('div');
+			labelContainer.className = 'cache-device-labels';
+
+			var existingLabels = existingByDevice[device] || [];
+			var autoSelectAll = existingLabels.length === 0;
+
+			labelKeys.forEach(function(label) {
+				var row = document.createElement('div');
+				row.className = 'cache-label-item cache-label-item--nested';
+				var left = document.createElement('label');
+				var checkbox = document.createElement('input');
+				checkbox.type = 'checkbox';
+				checkbox.setAttribute('data-device', device);
+				checkbox.setAttribute('data-label', label);
+				if (autoSelectAll || existingLabels.indexOf(label) !== -1) checkbox.checked = true;
+				checkbox.addEventListener('change', function() {
+					updateDeviceCheckboxState(deviceCheckbox, labelContainer);
+					scheduleSelectionRecalc();
+				});
+				left.appendChild(checkbox);
+				var name = document.createElement('span');
+				name.className = 'cache-label-name';
+				name.textContent = ' ' + label;
+				left.appendChild(name);
+				var count = document.createElement('span');
+				count.className = 'cache-label-count';
+				count.textContent = labels[label];
+				row.appendChild(left);
+				row.appendChild(count);
+				labelContainer.appendChild(row);
+			});
+
+			group.appendChild(labelContainer);
+			list.appendChild(group);
+
+			updateDeviceCheckboxState(deviceCheckbox, labelContainer);
+			deviceCheckbox.addEventListener('change', function() {
+				var checked = deviceCheckbox.checked;
+				var inputs = labelContainer.querySelectorAll('input[data-label]');
+				inputs.forEach(function(input) { input.checked = checked; });
+				updateDeviceCheckboxState(deviceCheckbox, labelContainer);
+				scheduleSelectionRecalc();
+			});
+		});
+	}
+
+	function getCacheSelection() {
+		var list = document.getElementById('cache-label-list');
+		var selection = { selected_devices: [], selected_labels_by_device: {}, any_checked: false };
+		if (!list) return selection;
+		var inputs = list.querySelectorAll('input[data-label]');
+		inputs.forEach(function(input) {
+			if (!input.checked) return;
+			selection.any_checked = true;
+			var device = input.getAttribute('data-device') || 'Unknown';
+			var label = input.getAttribute('data-label');
+			if (!selection.selected_labels_by_device[device]) {
+				selection.selected_labels_by_device[device] = [];
+			}
+			selection.selected_labels_by_device[device].push(label);
+		});
+		selection.selected_devices = Object.keys(selection.selected_labels_by_device);
+		return selection;
+	}
+
+	function selectAllCacheLabels() {
+		var list = document.getElementById('cache-label-list');
+		if (!list) return;
+		var inputs = list.querySelectorAll('input[data-label]');
+		inputs.forEach(function(input) { input.checked = true; });
+		var deviceInputs = list.querySelectorAll('input.cache-device-checkbox');
+		deviceInputs.forEach(function(deviceCheckbox) {
+			var container = deviceCheckbox.closest('.cache-device-group').querySelector('.cache-device-labels');
+			updateDeviceCheckboxState(deviceCheckbox, container);
+		});
+		scheduleSelectionRecalc();
+	}
+
+	function selectNoCacheLabels() {
+		var list = document.getElementById('cache-label-list');
+		if (!list) return;
+		var inputs = list.querySelectorAll('input[data-label]');
+		inputs.forEach(function(input) { input.checked = false; });
+		var deviceInputs = list.querySelectorAll('input.cache-device-checkbox');
+		deviceInputs.forEach(function(deviceCheckbox) {
+			var container = deviceCheckbox.closest('.cache-device-group').querySelector('.cache-device-labels');
+			updateDeviceCheckboxState(deviceCheckbox, container);
+		});
+		scheduleSelectionRecalc();
+	}
+
+	function scheduleSelectionRecalc() {
+		if (cacheAnalyzeTimer) clearTimeout(cacheAnalyzeTimer);
+		cacheAnalyzeTimer = setTimeout(function() {
+			updateCacheSelectionSummary();
+		}, 150);
+	}
+
+	function formatBytes(bytes) {
+		if (!bytes) return '0 B';
+		var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+		var idx = Math.floor(Math.log(bytes) / Math.log(1024));
+		return (bytes / Math.pow(1024, idx)).toFixed(1) + ' ' + units[idx];
+	}
+
+	function showCacheProgress(show) {
+		var block = document.getElementById('cache-progress-block');
+		if (block) block.style.display = show ? 'block' : 'none';
+	}
+
+	function updateCacheProgress(status) {
+		var msg = document.getElementById('cache-modal-message');
+		var bar = document.getElementById('cache-progress-bar');
+		var text = document.getElementById('cache-progress-text');
+		if (!msg || !bar || !text) return;
+		var total = parseInt(status.total || status.total_files || status.files_total || 0, 10);
+		var copied = parseInt(status.copied || status.files_copied || 0, 10);
+		if (status.message) msg.textContent = status.message;
+		if (total > 0) {
+			var pct = Math.max(0, Math.min(100, Math.round((copied / total) * 100)));
+			bar.style.width = pct + '%';
+			text.textContent = copied + ' / ' + total + ' files';
+		} else {
+			bar.style.width = '0%';
+			text.textContent = '0 / 0 files';
+		}
+	}
+
+	function copySelectedCache() {
+		var btn = document.getElementById('cache-copy-btn');
+		if (!btn || btn.disabled) return;
+		var payload = _buildCachePayload(getCacheSelection());
+		if (!payload) return;
+		showCacheProgress(true);
+		updateCacheProgress({ message: 'Starting...', copied: 0, total: 0 });
+
+		fetch(buildDashboardUrl('/api/verification/cache'), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload)
+		})
+			.then(function(resp) { return resp.json(); })
+			.then(function(data) {
+				if (data.status === 'error') {
+					showCacheProgress(false);
+					alert(data.message || 'Cache build failed.');
+					return;
+				}
+				pollLocalCacheStatus();
+			})
+			.catch(function() {
+				showCacheProgress(false);
+				alert('Could not reach the dashboard server.');
+			});
+	}
+
+	function pollLocalCacheStatus() {
+		var attempts = 0;
+		var timer = setInterval(function() {
+			fetch(buildDashboardUrl('/api/verification/cache/status'))
+				.then(function(resp) { return resp.json(); })
+				.then(function(status) {
+					attempts++;
+					if (!status || !status.state) return;
+					if (status.state === 'running') {
+						updateCacheProgress(status);
+						return;
+					}
+						if (status.state === 'done') {
+							clearInterval(timer);
+							updateCacheProgress(status);
+							showCacheProgress(false);
+							closeCacheModal();
+							launchVerificationApp(
+								status.data_dir || status.local_cache_dir,
+								document.getElementById('cache-action-btn')
+							);
+							return;
+						}
+					if (status.state === 'error') {
+						clearInterval(timer);
+						updateCacheProgress(status);
+						showCacheProgress(false);
+						alert(status.message || 'Cache build failed.');
+						return;
+					}
+				})
+				.catch(function() {
+					attempts++;
+					if (attempts > 10) {
+						clearInterval(timer);
+						showCacheProgress(false);
+					}
+				});
+		}, 1500);
+	}
+
+	document.addEventListener("DOMContentLoaded", function() {
+		applyDashboardTheme(ACTIVE_THEME, false);
+		syncVerificationToolVisibility();
+		if (!isPublicDetailPage()) {
+			initLastUpdatedIndicator();
+			loadDashboardSettings();
+			startRuntimeStatusPolling();
+		}
+		{% if show_public_notifications|default(dashboard_variant == 'public', true) %}
+		if (isPublicDashboardPage()) {
+			initPublicNotifications();
+		}
+		{% endif %}
+		document.addEventListener('click', function(event) {
+			var menu = document.getElementById('actions-menu');
+			var toggle = document.getElementById('actions-menu-toggle');
+			if (!menu || !toggle) return;
+			if (!menu.contains(event.target) && !toggle.contains(event.target)) {
+				closeActionsMenu();
+			}
+		});
+		document.addEventListener('keydown', function(event) {
+			if (event.key === 'Escape') closeActionsMenu();
+		});
+		window.addEventListener('beforeunload', function() {
+			if (runtimeStatusPollTimer) {
+				clearInterval(runtimeStatusPollTimer);
+				runtimeStatusPollTimer = null;
+			}
+			if (publicRefreshPollTimer) {
+				clearInterval(publicRefreshPollTimer);
+				publicRefreshPollTimer = null;
+			}
+			if (scheduledReloadTimer) {
+				clearTimeout(scheduledReloadTimer);
+				scheduledReloadTimer = null;
+			}
+		});
+	});
+	</script>

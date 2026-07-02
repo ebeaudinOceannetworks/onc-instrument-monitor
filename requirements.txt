@@ -1,0 +1,10 @@
+flask
+jinja2
+pandas
+onc
+python-dotenv
+requests
+pyyaml
+atlassian-python-api
+python-dateutil
+psycopg2-binary

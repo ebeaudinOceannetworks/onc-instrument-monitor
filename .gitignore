@@ -1,0 +1,14 @@
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+data/*.json
+!data/.gitkeep
+cache/
+Dashboard.html
+site_details/
+*.html
+!templates/**/*.html.j2

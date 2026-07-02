@@ -1,0 +1,20 @@
+# Status rules for scalar_site data_type.
+# Each data_type can define its own thresholds in a matching file.
+
+scalar_site:
+  lookback_hours: 24
+  expected_interval_minutes: 60
+  thresholds:
+    good_min_coverage_pct: 85
+    intermittent_min_coverage_pct: 30
+  bad_data:
+    # Placeholder — per-instrument scripts can override later.
+    max_outlier_zscore: 5
+    flatline_hours: 6
+
+labels:
+  good: Good
+  intermittent: Intermittent data
+  bad: Bad data
+  no_data: No data
+  compromised: Compromised

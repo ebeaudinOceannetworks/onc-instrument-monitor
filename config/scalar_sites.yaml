@@ -1,0 +1,31 @@
+# Scalar / water-property device categories discovered via the ONC API.
+# Every active device in these categories is discovered network-wide and grouped
+# into sites by location. Each site is tagged with its region (NEPTUNE / VENUS /
+# West Coast / Arctic / Atlantic) for the sidebar grouping.
+
+default_scalar_categories:
+  - CTD
+  - OXYGEN
+  - FLNTU
+  - PCO2
+  - PAR
+  - PH
+  - ICECPROFILER
+  - TSS
+  - TRANSMISSOMETER
+  - PARTANALYZER
+  - ECHOSOUNDERBIOA
+  - IMGROTARYSONAR
+  - SPS
+
+# Optional: restrict to specific regions (empty = include all regions).
+# e.g. [NEPTUNE, VENUS]
+include_regions: []
+
+# Optional per-site metadata overrides, keyed by site_code (the locationCode
+# prefix before the first dot). Use this to record who monitors a site.
+# e.g.
+#   BACAX:
+#     assignee: Zarah
+#     site_name: Barkley Canyon Axis
+site_overrides: {}

@@ -1,0 +1,99 @@
+<div class="section scalar-site-section" data-location-code="{{ site.site_code }}">
+	<div class="section-header public-section-header" style="border-color: {{ site.site_status.color }};">
+		<div class="public-section-heading">
+			<div class="public-section-title-block">
+				<div class="public-section-kicker">
+					<span>{{ site.network }}</span>
+					<span class="public-section-kicker-divider" aria-hidden="true"></span>
+					<span>Site {{ site.site_code }}</span>
+				</div>
+				<div class="public-section-title-row">
+					<h2>{{ site.site_name }}</h2>
+					<span class="status-indicator" style="background-color: {{ site.site_status.color }};">
+						{{ site.site_status.icon }} {{ site.site_status.display }}
+					</span>
+					<div class="device-links public-section-links">
+						<a class="device-link device-link-search" href="https://data.oceannetworks.ca/DataSearch?locationCode={{ site.site_code }}" target="_blank">
+							<span>Data Search</span>
+						</a>
+					</div>
+				</div>
+			</div>
+		</div>
+		<dl class="public-section-details">
+			<div class="public-section-detail-item"><dt>Site code</dt><dd>{{ site.site_code }}</dd></div>
+			<div class="public-section-detail-item"><dt>Assignee</dt><dd>{{ site.assignee or '—' }}</dd></div>
+			<div class="public-section-detail-item"><dt>Devices</dt><dd>{{ site.devices|length }}</dd></div>
+		</dl>
+	</div>
+
+	{% if site.jira_tickets %}
+	<div class="data-status-summary">
+		<div class="jira-block">
+			<h4>Site JIRA tickets</h4>
+			<ul>
+				{% for ticket in site.jira_tickets %}
+				<li><a href="{{ ticket.url }}" target="_blank">{{ ticket.key }}</a> — {{ ticket.summary }} ({{ ticket.status }})</li>
+				{% endfor %}
+			</ul>
+		</div>
+	</div>
+	{% endif %}
+
+	<div class="device-grid-wrap">
+		<h4>Devices at site</h4>
+		<table class="device-grid">
+			<thead>
+				<tr>
+					<th>Category</th>
+					<th>Device Code</th>
+					<th>Device ID</th>
+					<th>Status</th>
+					<th>JB</th>
+					<th>JIRA</th>
+					<th>Details</th>
+					<th>Data Search</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for device in site.devices %}
+				<tr>
+					<td>{{ device.deviceCategoryCode }}</td>
+					<td>{{ device.deviceCode }}</td>
+					<td>{{ device.deviceID }}</td>
+					<td><span class="status-pill status-{{ device.status.label }}" style="background-color: {{ device.status.color }}; color: #fff;">{{ device.status.icon }} {{ device.status.display }}</span></td>
+					<td>{% if device.jb_info %}{{ device.jb_info[0].devicecode | default('linked') }}{% else %}—{% endif %}</td>
+					<td>
+						{% for ticket in device.jira_tickets %}
+						<a href="{{ ticket.url }}" target="_blank">{{ ticket.key }}</a>{% if not loop.last %}, {% endif %}
+						{% else %}—{% endfor %}
+					</td>
+					<td><a href="{{ device.deviceDetailsUrl }}" target="_blank">Link</a></td>
+					<td><a href="{{ device.dataSearchUrl }}" target="_blank">Link</a></td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+
+	<div class="scalar-plots-panel">
+		<h4>Data — last 24h (scalar) / availability (complex)</h4>
+		{% for device in site.devices %}
+		{% if device.dataClass == 'complex' and device.availability %}
+		{% include 'components/availability_widget.html.j2' %}
+		{% else %}
+		<div class="scalar-plot-card" data-device-id="{{ device.deviceID }}">
+			<div class="scalar-plot-header">
+				<strong>{{ device.deviceCategoryCode }} · {{ device.deviceCode }}</strong>
+				<div class="scalar-toggle">
+					<label><input type="radio" name="series-{{ device.deviceID }}" value="clean" checked> Clean</label>
+					<label><input type="radio" name="series-{{ device.deviceID }}" value="raw"> Raw</label>
+					<label><input type="radio" name="series-{{ device.deviceID }}" value="both"> Both</label>
+				</div>
+			</div>
+			<div class="scalar-plot-canvas" id="plot-{{ device.deviceID }}" data-clean='{{ device.plot_series.clean | tojson }}' data-raw='{{ device.plot_series.raw | tojson }}'></div>
+		</div>
+		{% endif %}
+		{% endfor %}
+	</div>
+</div>

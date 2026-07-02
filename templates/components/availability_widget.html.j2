@@ -1,0 +1,36 @@
+<div class="availability-widget" data-availability='{{ device.availability | tojson }}'>
+	<div class="availability-head">
+		<h4>Data availability — last {{ device.availability.days|length }} days</h4>
+		<span class="availability-meta">
+			{{ device.availability.coverage_pct }}% coverage
+			{% if device.availability.last_data_date %}· last data {{ device.availability.last_data_date }}{% else %}· no data in window{% endif %}
+			· {{ device.availability.extensions | join(', ') }}
+		</span>
+	</div>
+	<div class="availability-strip">
+		{% for cell in device.availability.days %}
+		{% set pct = (cell.frac * 100) | round(0, 'floor') | int %}
+		<div class="availability-day">
+			<div class="availability-cell availability-cell-{{ cell.level }}"
+			     title="{{ cell.date }} — {{ cell.total }} files ({{ pct }}% of a full day){% for ext, n in cell.counts.items() %} · {{ ext }}:{{ n }}{% endfor %}"></div>
+			<span class="availability-cell-label">{{ cell.date[5:] }}</span>
+		</div>
+		{% endfor %}
+	</div>
+	<div class="availability-legend">
+		<span><span class="availability-swatch availability-cell-good"></span> Full day</span>
+		<span><span class="availability-swatch availability-cell-partial"></span> Partial</span>
+		<span><span class="availability-swatch availability-cell-none"></span> No data</span>
+	</div>
+
+	{% if view == 'instrument' and device.availability.recent_files %}
+	<div class="archived-files">
+		<h5>Last archived files</h5>
+		<ul class="archived-files-list">
+			{% for file in device.availability.recent_files %}
+			<li><span class="archived-file-ext">{{ file.extension }}</span> <code>{{ file.filename }}</code></li>
+			{% endfor %}
+		</ul>
+	</div>
+	{% endif %}
+</div>

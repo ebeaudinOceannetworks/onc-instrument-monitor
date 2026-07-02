@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+	{% include 'components/head.html.j2' %}
+</head>
+<body class="dashboard-shell dashboard-shell-public" data-dashboard-variant="public" data-view="{{ view }}">
+	<data id="oncdw" data-token="{{ token }}"></data>
+	<header class="top-bar">
+		<h1>{{ dashboard_title }}</h1>
+		<div class="top-bar-actions">
+			<div class="view-toggle" role="group" aria-label="Map view mode">
+				<a class="view-toggle-btn {% if view == 'site' %}active{% endif %}"
+				   href="{{ (dashboard_url_prefix or '') ~ '/' ~ view_files.site }}"
+				   aria-pressed="{{ 'true' if view == 'site' else 'false' }}">By Site</a>
+				<a class="view-toggle-btn {% if view == 'instrument' %}active{% endif %}"
+				   href="{{ (dashboard_url_prefix or '') ~ '/' ~ view_files.instrument }}"
+				   aria-pressed="{{ 'true' if view == 'instrument' else 'false' }}">By Instrument</a>
+			</div>
+			<div class="top-bar-meta">
+				<div class="top-bar-status-strip">
+					<div class="top-bar-status-item">
+						<span class="top-bar-status-label">Updated</span>
+						<span id="last-updated-indicator" class="last-updated-indicator" data-updated-at="{{ dashboard_generated_at_utc }}">{{ dashboard_generated_at_utc }}</span>
+					</div>
+					<span class="top-bar-status-separator" aria-hidden="true"></span>
+					<div class="top-bar-status-item">
+						<span class="top-bar-status-label">API</span>
+						<span class="auto-refresh-status">{% if api_connected %}connected{% else %}not connected — set ONC_TOKEN in .env{% endif %}</span>
+					</div>
+				</div>
+			</div>
+			<button class="theme-toggle-btn" type="button" data-theme-toggle onclick="toggleDashboardTheme()">
+				<span class="theme-toggle-icon" aria-hidden="true">☾</span>
+			</button>
+			<button id="public-refresh-btn" class="settings-btn refresh-status-btn" type="button" onclick="requestPublicRefresh()" data-default-label="Refresh Data">
+				<svg class="refresh-progress-circle" data-refresh-circle viewBox="0 0 20 20" aria-hidden="true">
+					<circle class="refresh-progress-track" cx="10" cy="10" r="8"></circle>
+					<circle class="refresh-progress-fill" cx="10" cy="10" r="8"></circle>
+				</svg>
+				<span class="refresh-button-label" data-refresh-label>Refresh Data</span>
+			</button>
+		</div>
+	</header>
+
+	{% include 'components/status_legend_scalar.html.j2' %}
+	{% include 'components/summary_box.html.j2' %}
+	{% include 'components/sidebar.html.j2' %}
+
+	<div class="main">
+		<div class="dashboard-tab-bar" role="tablist" aria-label="Dashboard views">
+			<button id="map-tab-button" class="dashboard-tab-button active" type="button" data-tab-target="map" role="tab" aria-selected="true" aria-controls="map-tab-panel">
+				Map View
+			</button>
+			<button id="workflows-tab-button" class="dashboard-tab-button" type="button" data-tab-target="workflows" role="tab">
+				Validation &amp; Commissioning
+			</button>
+			<div id="public-detail-tab-buttons" class="detail-tab-button-list" aria-label="Opened detail tabs"></div>
+		</div>
+
+		<div id="map-tab-panel" class="tab-panel map-tab-panel" role="tabpanel" aria-labelledby="map-tab-button">
+			{% if view == 'instrument' %}
+			<div class="map-filter-bar">
+				<label for="instrument-type-filter">Show instrument type</label>
+				<select id="instrument-type-filter">
+					<option value="__all__">All instrument types</option>
+				</select>
+			</div>
+			{% endif %}
+			<div class="hydrophone-map-layout">
+				<div id="hydrophone-status-map" class="hydrophone-status-map" aria-label="Status map"></div>
+			</div>
+		</div>
+
+		<div id="workflows-tab-panel" class="tab-panel" role="tabpanel" hidden>
+			<div class="workflow-grid">
+				<section class="workflow-card">
+					<h3>Validation Report Generator</h3>
+					<p class="workflow-hint">Enter the reference device ID (e.g. the MTC integration-lab reference instrument). Pulls metadata and generates a validation starting point.</p>
+					<form id="validation-form" class="workflow-form">
+						<label>Reference device ID <input name="reference_device_id" placeholder="e.g. 23456 or SBECTD16p6002" required></label>
+						<button type="submit" class="workflow-submit">Generate validation report</button>
+					</form>
+					<pre id="validation-result" class="workflow-result" hidden></pre>
+				</section>
+
+				<section class="workflow-card">
+					<h3>Commissioning Report Generator</h3>
+					<p class="workflow-hint">Enter a device code (and optional location), load its deployments, pick the one to commission, then generate the report.</p>
+					<form id="commissioning-form" class="workflow-form">
+						<label>Device code <input name="device_code" placeholder="e.g. SBECTD16p6002" required></label>
+						<label>Location code (optional) <input name="location_code" placeholder="e.g. BACAX"></label>
+						<button type="button" id="load-deployments-btn" class="workflow-secondary">Load deployments</button>
+						<label>Deployment
+							<select name="deployment" id="deployment-select" disabled>
+								<option value="">Load deployments first…</option>
+							</select>
+						</label>
+						<button type="submit" class="workflow-submit">Generate commissioning report</button>
+					</form>
+					<pre id="commissioning-result" class="workflow-result" hidden></pre>
+				</section>
+			</div>
+		</div>
+
+		<div id="details-tab-panel" class="tab-panel detail-tab-panel" role="tabpanel" aria-label="Detail tabs" hidden>
+			<div id="public-detail-tab-panels" class="detail-tab-panels"></div>
+		</div>
+	</div>
+
+	<div id="internal-detail-source" hidden>
+		{% if view == 'instrument' %}
+			{% for device in devices %}
+			<div id="device-{{ device.deviceKey }}">
+				{% include 'components/instrument_detail.html.j2' %}
+			</div>
+			{% endfor %}
+		{% else %}
+			{% for site in sites %}
+			<div id="site-{{ site.site_code }}">
+				{% include 'components/site_detail.html.j2' %}
+			</div>
+			{% endfor %}
+		{% endif %}
+	</div>
+
+	<script id="hydrophone-map-data" type="application/json">{{ map_markers | tojson }}</script>
+	<script>
+	(function() {
+		var mapBtn = document.getElementById('map-tab-button');
+		var workflowBtn = document.getElementById('workflows-tab-button');
+		var mapPanel = document.getElementById('map-tab-panel');
+		var workflowPanel = document.getElementById('workflows-tab-panel');
+		var detailsPanel = document.getElementById('details-tab-panel');
+
+		function showWorkflowsTab() {
+			if (mapPanel) { mapPanel.hidden = true; mapPanel.setAttribute('aria-hidden', 'true'); }
+			if (detailsPanel) { detailsPanel.hidden = true; detailsPanel.setAttribute('aria-hidden', 'true'); }
+			if (workflowPanel) { workflowPanel.hidden = false; workflowPanel.setAttribute('aria-hidden', 'false'); }
+			if (mapBtn) mapBtn.classList.remove('active');
+			if (workflowBtn) workflowBtn.classList.add('active');
+		}
+		if (workflowBtn) workflowBtn.addEventListener('click', function(e) { e.preventDefault(); showWorkflowsTab(); });
+		if (mapBtn) mapBtn.addEventListener('click', function() {
+			if (workflowPanel) { workflowPanel.hidden = true; workflowPanel.setAttribute('aria-hidden', 'true'); }
+			if (workflowBtn) workflowBtn.classList.remove('active');
+		});
+
+		function postJson(url, payload) {
+			return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function(r) { return r.json(); });
+		}
+		function formPayload(form) {
+			return Object.fromEntries(new FormData(form).entries());
+		}
+		function showResult(el, data) {
+			el.hidden = false;
+			el.textContent = (data && data.report_text) ? data.report_text : JSON.stringify(data, null, 2);
+		}
+
+		var prefix = '{{ dashboard_url_prefix or '' }}';
+		var vf = document.getElementById('validation-form');
+		if (vf) vf.addEventListener('submit', async function(e) {
+			e.preventDefault();
+			showResult(document.getElementById('validation-result'), await postJson(prefix + '/api/workflows/validation', formPayload(vf)));
+		});
+
+		var cf = document.getElementById('commissioning-form');
+		var loadBtn = document.getElementById('load-deployments-btn');
+		var depSelect = document.getElementById('deployment-select');
+		if (loadBtn) loadBtn.addEventListener('click', async function() {
+			var deviceCode = cf.querySelector('[name=device_code]').value.trim();
+			var locationCode = cf.querySelector('[name=location_code]').value.trim();
+			if (!deviceCode) { depSelect.innerHTML = '<option value="">Enter a device code first</option>'; return; }
+			loadBtn.textContent = 'Loading…'; loadBtn.disabled = true;
+			try {
+				var data = await postJson(prefix + '/api/workflows/commissioning/deployments', { device_code: deviceCode, location_code: locationCode });
+				var deps = (data && data.deployments) || [];
+				if (!deps.length) {
+					depSelect.innerHTML = '<option value="">No deployments found</option>';
+					depSelect.disabled = true;
+				} else {
+					depSelect.innerHTML = deps.map(function(d) { return '<option value="' + d.value + '">' + d.label + '</option>'; }).join('');
+					depSelect.disabled = false;
+				}
+			} finally {
+				loadBtn.textContent = 'Load deployments'; loadBtn.disabled = false;
+			}
+		});
+		if (cf) cf.addEventListener('submit', async function(e) {
+			e.preventDefault();
+			showResult(document.getElementById('commissioning-result'), await postJson(prefix + '/api/workflows/commissioning', formPayload(cf)));
+		});
+	})();
+	</script>
+</body>
+</html>

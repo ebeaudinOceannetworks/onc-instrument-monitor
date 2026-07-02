@@ -1,0 +1,21 @@
+	{% set noun = 'instrument' if view == 'instrument' else 'site' %}
+	<div class="summary-box">
+		<h3>📊 System Status Summary</h3>
+		<p>Monitoring <strong>{{ summary.total }} {{ noun }}{{ '' if summary.total == 1 else 's' }}</strong>
+		   ({{ 'per instrument' if view == 'instrument' else 'per site' }} view).</p>
+		<div class="summary-counts">
+			{% if summary.counts.good %}<div class="count-item" style="background-color: #28a745;">{{ summary.counts.good }} Good</div>{% endif %}
+			{% if summary.counts.intermittent %}<div class="count-item" style="background-color: #ffc107;">{{ summary.counts.intermittent }} Intermittent</div>{% endif %}
+			{% if summary.counts.bad %}<div class="count-item" style="background-color: #fd7e14;">{{ summary.counts.bad }} Bad data</div>{% endif %}
+			{% if summary.counts.no_data %}<div class="count-item" style="background-color: #dc3545;">{{ summary.counts.no_data }} No data</div>{% endif %}
+			{% if summary.counts.compromised %}<div class="count-item" style="background-color: #6f42c1;">{{ summary.counts.compromised }} Compromised</div>{% endif %}
+		</div>
+		{% if summary.needs_attention > 0 %}
+			<p><strong>Action Required:</strong> {{ summary.needs_attention }} {{ noun }}{{ '' if summary.needs_attention == 1 else 's' }} need attention.</p>
+		{% elif summary.total > 0 %}
+			<p><strong>✅ All monitored {{ noun }}s look healthy</strong> for the current lookback window.</p>
+		{% endif %}
+		{% if not api_connected %}
+			<p><strong>⚠ API not connected.</strong> Copy <code>.env.example</code> to <code>.env</code> and set <code>ONC_TOKEN</code> (or <code>ONC_API_TOKEN</code>), then click Refresh Data.</p>
+		{% endif %}
+	</div>

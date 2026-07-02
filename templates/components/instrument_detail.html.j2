@@ -1,0 +1,96 @@
+<div class="section instrument-section" data-location-code="{{ device.deviceKey }}">
+	<div class="section-header public-section-header" style="border-color: {{ device.status.color }};">
+		<div class="public-section-heading">
+			<div class="public-section-title-block">
+				<div class="public-section-kicker">
+					<span>{{ device.region or device.network or device.dataClass | upper }}</span>
+					<span class="public-section-kicker-divider" aria-hidden="true"></span>
+					<span>{{ device.deviceCategoryCode }}</span>
+				</div>
+				<div class="public-section-title-row">
+					<h2>{{ device.deviceName or device.deviceCode }}</h2>
+					<span class="status-indicator" style="background-color: {{ device.status.color }};">
+						{{ device.status.icon }} {{ device.status.display }}
+					</span>
+					<div class="device-links public-section-links">
+						<a class="device-link device-link-details" href="{{ device.deviceDetailsUrl }}" target="_blank"><span>Device Details</span></a>
+						<a class="device-link device-link-search" href="{{ device.dataSearchUrl }}" target="_blank"><span>Data Search</span></a>
+					</div>
+				</div>
+				<p class="public-section-subtitle">{{ device.locationName or device.siteName or device.locationCode }}</p>
+			</div>
+		</div>
+		<dl class="public-section-details">
+			<div class="public-section-detail-item"><dt>Device code</dt><dd>{{ device.deviceCode }}</dd></div>
+			<div class="public-section-detail-item"><dt>Device ID</dt><dd>{{ device.deviceID or '—' }}</dd></div>
+			<div class="public-section-detail-item"><dt>Category</dt><dd>{{ device.deviceCategoryCode }}</dd></div>
+			<div class="public-section-detail-item"><dt>Location</dt><dd>{{ device.locationCode or '—' }}</dd></div>
+			<div class="public-section-detail-item"><dt>Region</dt><dd>{{ device.region or device.network or '—' }}</dd></div>
+			{% if device.depth %}<div class="public-section-detail-item"><dt>Depth</dt><dd>{{ device.depth }} m</dd></div>{% endif %}
+		</dl>
+	</div>
+
+	<div class="detail-widget jira-widget">
+		<h4>JIRA tickets</h4>
+		{% if device.jira_tickets %}
+		<ul class="jira-list">
+			{% for ticket in device.jira_tickets %}
+			<li><a href="{{ ticket.url }}" target="_blank">{{ ticket.key }}</a> — {{ ticket.summary }} <span class="jira-status">({{ ticket.status }})</span></li>
+			{% endfor %}
+		</ul>
+		{% else %}
+		<p class="detail-empty">No linked JIRA tickets found.</p>
+		{% endif %}
+	</div>
+
+	<div class="detail-widget annotation-widget">
+		<h4>Open annotations</h4>
+		{% if device.open_annotations %}
+		<ul class="annotation-list">
+			{% for note in device.open_annotations %}
+			<li>{{ note.text }}</li>
+			{% endfor %}
+		</ul>
+		{% else %}
+		<p class="detail-empty">Annotation source not yet connected.</p>
+		{% endif %}
+	</div>
+
+	<div class="detail-widget jb-widget">
+		<h4>Junction box / port status</h4>
+		{% if device.jb_info %}
+		<ul class="jb-list">
+			{% for row in device.jb_info %}
+			<li><strong>{{ row.devicecode | default('JB') }}</strong> — {{ row.sensorcode | default('voltage sensor') }}</li>
+			{% endfor %}
+		</ul>
+		{% elif db_configured %}
+		<p class="detail-empty">No junction-box link found for this device in the topology.</p>
+		{% else %}
+		<p class="detail-empty">Junction-box status needs a database connection. Set <code>DB_HOST</code>, <code>DB_NAME</code>, <code>DB_USER</code>, <code>DB_PASSWORD</code> in <code>.env</code>.</p>
+		{% endif %}
+	</div>
+
+	{% if device.dataClass == 'complex' %}
+	{% if device.availability %}
+	{% include 'components/availability_widget.html.j2' %}
+	{% else %}
+	<div class="detail-widget"><p class="detail-empty">No availability data for this instrument.</p></div>
+	{% endif %}
+	{% else %}
+	<div class="detail-widget scalar-plots-panel">
+		<h4>Scalar data — last 24h</h4>
+		<div class="scalar-plot-card" data-device-id="{{ device.deviceID }}">
+			<div class="scalar-plot-header">
+				<strong>{{ device.deviceCategoryCode }} · {{ device.deviceCode }}</strong>
+				<div class="scalar-toggle">
+					<label><input type="radio" name="iseries-{{ device.deviceID }}" value="clean" checked> Clean</label>
+					<label><input type="radio" name="iseries-{{ device.deviceID }}" value="raw"> Raw</label>
+					<label><input type="radio" name="iseries-{{ device.deviceID }}" value="both"> Both</label>
+				</div>
+			</div>
+			<div class="scalar-plot-canvas" data-clean='{{ device.plot_series.clean | tojson }}' data-raw='{{ device.plot_series.raw | tojson }}'></div>
+		</div>
+	</div>
+	{% endif %}
+</div>

@@ -1,0 +1,49 @@
+# Registered data_type plugins.
+#   data_class: complex  -> hydrophone, seismometer, ADCP (viewed PER INSTRUMENT)
+#   data_class: scalar   -> CTD, oxygen, fluorometer, ... (viewed PER SITE)
+# Enable/disable which plugins load via ENABLED_DATA_TYPES in .env.
+#
+# Complex plugins use archive-file availability. Configure per type:
+#   categories            deviceCategoryCodes to discover (ONC discovery service)
+#   archive_extensions    file extensions counted for availability
+#   expected_files_per_day expected count per extension per day
+#   availability_days     lookback window for the availability strip
+
+data_types:
+  scalar_site:
+    label: Water Properties (Scalar)
+    data_class: scalar
+    natural_view: site
+    description: >
+      Site-centric monitoring for CTD, oxygen optodes, fluorometers, pCO2,
+      PAR, ice profiler, pH, and related scalar instruments.
+
+  hydrophone:
+    label: Hydrophones
+    data_class: complex
+    natural_view: instrument
+    categories: [HYDROPHONE]
+    archive_extensions: [fft, flac, mat]
+    expected_files_per_day: 288
+    availability_days: 7
+    description: Complex audio data with availability plots and archive file checks.
+
+  seismometer:
+    label: Seismometers
+    data_class: complex
+    natural_view: instrument
+    categories: [SEISMOMETER, BOTPR]
+    archive_extensions: [mseed]
+    expected_files_per_day: 24
+    availability_days: 7
+    description: Complex waveform data.
+
+  adcp:
+    label: ADCP
+    data_class: complex
+    natural_view: instrument
+    categories: [ADCP2MHZ, ADCP55KHZ, ADCP75KHZ, ADCP150KHZ, ADCP300KHZ, ADCP600KHZ]
+    archive_extensions: [rdi, nc]
+    expected_files_per_day: 24
+    availability_days: 7
+    description: Complex current profile data.

@@ -1,0 +1,31 @@
+# Maps ONC location-tree roots to the region labels used for grouping in the
+# dashboard sidebar. Built empirically from getLocationsTree():
+#   ONC
+#     Pacific (PAC)
+#       Northeast Pacific Ocean (NEP)   -> NEPTUNE
+#       Salish Sea (SAL)                -> VENUS
+#       British Columbia Lower Fraser (BCLF) -> West Coast
+#       British Columbia North Coast (BCNC) -> West Coast
+#       Vancouver Island (VANIS)        -> West Coast
+#     Arctic (ARCT)                     -> Arctic
+#     Atlantic (ATL)                    -> Atlantic
+#     Great Lakes (GRL)                 -> Great Lakes
+#     Antarctic (ANT)                   -> Antarctic
+#     Mobile Platforms (MOBP)           -> Mobile Platforms
+#
+# A device's region is resolved from its locationCode by walking these subtrees
+# once (cached to disk). Adjust the mapping here if grouping should change.
+
+region_roots:
+  NEP: NEPTUNE
+  SAL: VENUS
+  BCLF: West Coast
+  BCNC: West Coast
+  VANIS: West Coast
+  ARCT: Arctic
+  ATL: Atlantic
+  GRL: Great Lakes
+  ANT: Antarctic
+  MOBP: Mobile Platforms
+
+fallback: Other
