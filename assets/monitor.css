@@ -8,6 +8,15 @@
 .scalar-toggle label { margin-right: 0.75rem; font-size: 0.9rem; }
 .scalar-plot-canvas { min-height: 60px; }
 .scalar-plot-empty { padding: 1.5rem; text-align: center; font-size: 0.88rem; color: var(--theme-text-muted, #59697b); font-style: italic; }
+.soo-plots-section { margin: 24px 0 32px 0; padding: 20px; background: var(--card-bg, #ffffff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px;}
+.soo-section-header { margin-bottom: 16px;}
+.soo-section-header h3 { margin: 0 0 4px 0; font-size: 1.15rem; color: var(--text-main, #1e293b); }
+.soo-section-subtitle { margin: 0; font-size: 0.85rem; color: var(--text-muted, #64748b); }
+.soo-plots-grid { display: flex; gap: 16px; flex-wrap: wrap;}
+.soo-plot-card { flex: 1; min-width: 300px; background: var(--nested-bg, #f8fafc); border: 1px solid var(--border-inner, #cbd5e1); border-radius: 6px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.soo-plot-card h4 { margin: 0 0 10px 0; font-size: 0.9rem; color: var(--text-heading, #334155); border-bottom: 1px dashed var(--border-inner, #cbd5e1); padding-bottom: 6px; }
+.soo-plot-img { width: 100%; height: auto; border-radius: 4px; display: block; transition: transform 0.15s ease-in-out; }
+.soo-plot-img:hover { transform: scale(1.01); cursor: zoom-in; }
 .workflow-panel { padding: 1rem 1.25rem; max-width: 720px; }
 .workflow-panel form { display: grid; gap: 0.75rem; margin-bottom: 1rem; }
 .summary-box { margin: 0.75rem 1rem; padding: 0.75rem 1rem; border-radius: 10px; background: var(--theme-surface-strong, #fff); }

@@ -127,8 +127,8 @@ def resolve_data_types_and_categories(onc_client) -> dict[str, Any]:
         if cat['deviceCategoryCode'].upper() != 'WAVELENGTHOPTICALMODULE'
         if cat['deviceCategoryCode'].upper() != 'WETLABS_WQM'
         if cat['deviceCategoryCode'].upper() != 'WINDMONITOR'
-        
-
+        if cat['deviceCategoryCode'].upper() != 'CAMLIGHTS'
+        if cat['deviceCategoryCode'].upper() != 'ICE_BUOY'
     ]
     
     # Load configuration file rules

@@ -80,7 +80,7 @@ class ONCClient:
         if not records:
             return pd.DataFrame()
         df = pd.DataFrame(records)
-        df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
+        df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce", format="ISO8601")
         return df.dropna(subset=["datetime"])
 
     def _fetch_scalar_records(
@@ -357,7 +357,7 @@ def _parse_scalar_payload(payload: Any) -> pd.DataFrame:
     times, values = chosen
     return pd.DataFrame(
         {
-            "datetime": pd.to_datetime(times, utc=True, errors="coerce"),
+            "datetime": pd.to_datetime(times, utc=True, errors="coerce", format="ISO8601"),
             "value": pd.to_numeric(values, errors="coerce"),
         }
     ).dropna(subset=["datetime"])

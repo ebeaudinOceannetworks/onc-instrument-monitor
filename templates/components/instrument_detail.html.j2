@@ -79,7 +79,7 @@
 	{% endif %}
 	{% else %}
 	<div class="detail-widget scalar-plots-panel">
-		<h4>Scalar data — last 24h</h4>
+		<h4>Scalar data — last 7 days</h4>
 		<div class="scalar-plot-card" data-device-id="{{ device.deviceID }}">
 			<div class="scalar-plot-header">
 				<strong>{{ device.deviceCategoryCode }} · {{ device.deviceCode }}</strong>
@@ -89,7 +89,11 @@
 					<label><input type="radio" name="iseries-{{ device.deviceID }}" value="both"> Both</label>
 				</div>
 			</div>
-			<div class="scalar-plot-canvas" data-clean='{{ device.plot_series.clean | tojson }}' data-raw='{{ device.plot_series.raw | tojson }}'></div>
+			<div class="scalar-plot-canvas" 
+			     data-clean='{{ device.plot_series.clean | tojson }}' 
+			     data-raw='{{ device.plot_series.raw | tojson }}'
+			     data-lookback-hours="{{ device.lookback_hours }}">
+			</div>
 		</div>
 	</div>
 	{% endif %}

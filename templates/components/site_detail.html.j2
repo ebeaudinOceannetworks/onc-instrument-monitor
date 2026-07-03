@@ -86,7 +86,7 @@
 								{% for hop in device.lineage %}
 									<div style="display: flex; flex-direction: column; border-left: 2px solid #dee2e6; padding-left: 8px; margin-left: 4px;">
 										<div style="font-size: 11px; font-weight: bold; color: #495057; display: flex; align-items: center; gap: 4px;">
-											{% if hop.chassis_status == 'good' %}🟢{% else %}⚪{% endif %}
+											{% if hop.chassis_status == 'good' %}🟢{% else %}🔴{% endif %}
 											<span>{{ hop.category }}: <code style="font-size: 11px; background: #f1f3f5; padding: 1px 4px; border-radius: 3px;">{{ hop.device_code }}</code></span>
 										</div>
 										
@@ -122,8 +122,48 @@
 		</table>
 	</div>
 
+	<section class="soo-plots-section">
+	    <div class="soo-section-header">
+	        <h3>State of the Ocean — {{ site.site_code | upper }}</h3>
+	        <p class="soo-section-subtitle">Pre-generated climate indicators and anomaly trends via ONC Data Products</p>
+	    </div>
+	    
+	    <div class="soo-plots-grid">
+	        <div class="soo-plot-card">
+	            <h4>Climatology Context</h4>
+	            <a href="https://ftp.oceannetworks.ca/pub/DataProducts/SOO/{{ site.site_code | upper }}/{{ site.site_code | upper }}-StateOfOceanEnv-Climate.png" target="_blank" title="Click to view full resolution image">
+	                <img src="https://ftp.oceannetworks.ca/pub/DataProducts/SOO/{{ site.site_code | upper }}/{{ site.site_code | upper }}-StateOfOceanEnv-Climate.png" 
+	                     alt="Climate baseline data unavailable for this location" 
+	                     class="soo-plot-img"
+	                     onerror="this.closest('.soo-plot-card').style.display='none'; checkSooSectionEmpty(this);">
+	            </a>
+	        </div>
+
+	        <div class="soo-plot-card">
+	            <h4>Environmental Anomaly</h4>
+	            <a href="https://ftp.oceannetworks.ca/pub/DataProducts/SOO/{{ site.site_code | upper }}/{{ site.site_code | upper }}-StateOfOceanEnv-Anomaly.png" target="_blank" title="Click to view full resolution image">
+	                <img src="https://ftp.oceannetworks.ca/pub/DataProducts/SOO/{{ site.site_code | upper }}/{{ site.site_code | upper }}-StateOfOceanEnv-Anomaly.png" 
+	                     alt="Anomaly data unavailable for this location" 
+	                     class="soo-plot-img"
+	                     onerror="this.closest('.soo-plot-card').style.display='none'; checkSooSectionEmpty(this);">
+	            </a>
+	        </div>
+
+	        <div class="soo-plot-card">
+	            <h4>Min / Max / Avg (1-Day Window)</h4>
+	            <a href="https://ftp.oceannetworks.ca/pub/DataProducts/SOO/{{ site.site_code | upper }}/{{ site.site_code | upper }}-StateOfOceanEnv_MinMaxAvg1day.png" target="_blank" title="Click to view full resolution image">
+	                <img src="https://ftp.oceannetworks.ca/pub/DataProducts/SOO/{{ site.site_code | upper }}/{{ site.site_code | upper }}-StateOfOceanEnv_MinMaxAvg1day.png" 
+	                     alt="Daily envelope summaries unavailable for this location" 
+	                     class="soo-plot-img"
+	                     onerror="this.closest('.soo-plot-card').style.display='none'; checkSooSectionEmpty(this);">
+	            </a>
+	        </div>
+	    </div>
+	</section>
+
+
 	<div class="scalar-plots-panel">
-		<h4>Data — last 24h (scalar) / availability (complex)</h4>
+		<h4>Data — last 72h (scalar) / availability (complex)</h4>
 		{% for device in site.devices %}
 		{% if device.dataClass == 'complex' and device.availability %}
 		{% include 'components/availability_widget.html.j2' %}
@@ -137,7 +177,11 @@
 					<label><input type="radio" name="series-{{ device.deviceID }}" value="both"> Both</label>
 				</div>
 			</div>
-			<div class="scalar-plot-canvas" id="plot-{{ device.deviceID }}" data-clean='{{ device.plot_series.clean | tojson }}' data-raw='{{ device.plot_series.raw | tojson }}'></div>
+			<div class="scalar-plot-canvas" 
+			     data-clean='{{ device.plot_series.clean | tojson }}' 
+			     data-raw='{{ device.plot_series.raw | tojson }}'
+			     data-lookback-hours="{{ device.lookback_hours }}">
+			</div>
 		</div>
 		{% endif %}
 		{% endfor %}

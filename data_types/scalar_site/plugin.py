@@ -85,7 +85,163 @@ class ScalarSitePlugin(DataTypePlugin):
         return sites
 
     # -- internals ---------------------------------------------------------
+
     def _build_device(self, dev: dict[str, Any]) -> dict[str, Any]:
+        location_code = dev.get("locationCode") or ""
+        site_code = location_code.split(".")[0] if location_code else "UNKNOWN"
+        device_id = dev.get("deviceId")
+        device_code = dev["deviceCode"]
+        region = get_region_resolver().resolve(location_code)
+
+        # 1. Fetch both dataframes independently
+        clean_df = self._client.get_scalar_by_device(
+            device_code, hours=self._lookback_hours, quality_control="clean"
+        )
+        raw_df = self._client.get_scalar_by_device(
+            device_code, hours=self._lookback_hours, quality_control="raw",
+        )
+        status = evaluate_scalar_status(clean_df, self._rules)
+
+        # JB status
+        raw_jb_rows = get_jb_info_for_device(device_id) if device_id else []
+        jb_codes = {row.get("devicecode") for row in raw_jb_rows if row.get("devicecode")}
+        jb_payloads = {}
+        
+        from datetime import datetime, timedelta, timezone
+        end = datetime.now(timezone.utc)
+        lookback = self._lookback_hours if hasattr(self, '_lookback_hours') else 24
+        start = end - timedelta(hours=lookback)
+        
+        for jb_code in jb_codes:
+            try:
+                params = {
+                    "deviceCode": jb_code,
+                    "dateFrom": start.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                    "dateTo": end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                    "resamplePeriod": 900
+                }
+                jb_payloads[jb_code] = self._client._onc.getScalardataByDevice(params)
+            except Exception:
+                jb_payloads[jb_code] = None
+        
+        hops_map = {}
+        for row in raw_jb_rows:
+            hop_level = row.get("hop_level", 1)
+            jb_code = row.get("devicecode")
+            sensor_code = row.get("sensorcode")
+            
+            if hop_level not in hops_map:
+                hops_map[hop_level] = {
+                    "device_code": jb_code,
+                    "category": row.get("devicecategoryname") or "Component",
+                    "status_channel": None,
+                    "port_status": "no_data",
+                    "port_display": "N/A"
+                }
+            if sensor_code and "_status" in sensor_code:
+                hops_map[hop_level]["status_channel"] = sensor_code
+
+        lineage_breadcrumbs = []
+        for level in sorted(hops_map.keys()):
+            hop = hops_map[level]
+            h_code = hop["device_code"]
+            s_code = hop["status_channel"]
+            payload = jb_payloads.get(h_code)
+            
+            chassis_online = False
+            if isinstance(payload, dict) and isinstance(payload.get("sensorData"), list):
+                for stream in payload["sensorData"]:
+                    if isinstance(stream, dict):
+                        vals = stream.get("data", {}).get("values", [])
+                        if isinstance(vals, list) and vals:
+                            chassis_online = True
+                            break
+            
+            hop["chassis_status"] = "good" if chassis_online else "no_data"
+            hop["chassis_display"] = "Online" if chassis_online else "Passive/Offline"
+            
+            if s_code and chassis_online:
+                raw_value = None
+                for stream in payload["sensorData"]:
+                    if isinstance(stream, dict) and stream.get("sensorCode") == s_code:
+                        values = stream.get("data", {}).get("values", [])
+                        if isinstance(values, list) and values:
+                            raw_value = values[-1]
+                        break
+                
+                if raw_value is None:
+                    hop["port_status"] = "no_data"
+                    hop["port_display"] = "Unknown"
+                elif float(raw_value) in (3.0, 7.0, 39.0):
+                    hop["port_status"] = "good"
+                    hop["port_display"] = "On"
+                else:
+                    hop["port_status"] = "bad"
+                    hop["port_display"] = "Off"
+            elif s_code:
+                hop["port_status"] = "bad"
+                hop["port_display"] = "Off"
+                
+            lineage_breadcrumbs.append(hop)
+
+        overall_chassis = "good" if any(h["chassis_status"] == "good" for h in lineage_breadcrumbs) else "no_data"
+        overall_port = "good" if any(h["port_status"] == "good" for h in lineage_breadcrumbs) else "no_data"
+
+        plotting_utility_url = (
+            f"https://data.oceannetworks.ca/PlottingUtility?"
+            f"TREETYPE=17&DEVICECATEGORY=17&"
+            f"DEVICE={device_id}&"
+            f"DATEFROM={start.strftime('%d-%b-%Y %H:%M:%S').replace(' ', '%20')}&"
+            f"DATETO={end.strftime('%d-%b-%Y %H:%M:%S').replace(' ', '%20')}"
+        )
+
+        # 🚀 HIGH-RESOLUTION STORAGE: Keep datasets independent with full point resolution
+        clean_points = _series_to_points(clean_df)
+        
+        # Take every 5th raw point. This drops 86,000 points down to ~17,000 points.
+        # It keeps 100% of the fuzzy, noisy raw data texture without crashing the HTML browser canvas.
+        if raw_df is not None and not raw_df.empty:
+            raw_points = _series_to_points(raw_df.iloc[::5])
+        else:
+            raw_points = []
+
+        return {
+            "deviceKey": str(device_id or device_code),
+            "dataType": self.data_type,
+            "dataClass": DATA_CLASS_SCALAR,
+            "deviceCategoryCode": dev.get("deviceCategoryCode") or "",
+            "deviceCode": device_code,
+            "deviceID": device_id,
+            "deviceName": dev.get("deviceName") or device_code,
+
+            "lookback_hours": self._lookback_hours,
+
+            "siteCode": site_code,
+            "siteName": dev.get("locationName") or site_code,
+            "locationName": dev.get("locationName") or location_code,
+            "network": region,
+            "region": region,
+            "locationCode": location_code,
+            "depth": dev.get("depth"),
+            "latitude": dev.get("latitude"),
+            "longitude": dev.get("longitude"),
+            "deviceDetailsUrl": self._client.oceans3_device_url(device_id) if device_id else "",
+            "dataSearchUrl": plotting_utility_url,
+
+            "plot_series": {
+                "clean": clean_points,
+                "raw": raw_points,
+            },
+            
+            "status": status.to_dict(),
+            "jira_tickets": [],
+            "open_annotations": [],
+            "lineage": lineage_breadcrumbs,
+            "jb_chassis_status": overall_chassis,
+            "jb_port_status": overall_port
+        }
+
+    def _build_device_old(self, dev: dict[str, Any]) -> dict[str, Any]:
         location_code = dev.get("locationCode") or ""
         site_code = location_code.split(".")[0] if location_code else "UNKNOWN"
         device_id = dev.get("deviceId")
