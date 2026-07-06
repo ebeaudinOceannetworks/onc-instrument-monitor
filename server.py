@@ -119,6 +119,7 @@ def commissioning_workflow():
             device_code=str(body.get("device_code", "")),
             location_code=str(body.get("location_code", "")),
             deployment=str(body.get("deployment", "")),
+            review_phase=str(body.get("review_phase", "")),
         )
     )
     return jsonify(result)

@@ -163,7 +163,7 @@
 
 
 	<div class="scalar-plots-panel">
-		<h4>Data — last 72h (scalar) / availability (complex)</h4>
+		<h4>Data per sensor</h4>
 		{% for device in site.devices %}
 		{% if device.dataClass == 'complex' and device.availability %}
 		{% include 'components/availability_widget.html.j2' %}

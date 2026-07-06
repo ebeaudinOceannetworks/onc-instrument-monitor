@@ -1,36 +1,58 @@
-<div class="availability-widget" data-availability='{{ device.availability | tojson }}'>
-	<div class="availability-head">
-		<h4>Data availability — last {{ device.availability.days|length }} days</h4>
+<div class="archive-map-container">
+	<div class="archive-map-head">
+		<h4>Data Archive Map — last {{ device.availability_days }} days</h4>
 		<span class="availability-meta">
-			{{ device.availability.coverage_pct }}% coverage
-			{% if device.availability.last_data_date %}· last data {{ device.availability.last_data_date }}{% else %}· no data in window{% endif %}
-			· {{ device.availability.extensions | join(', ') }}
+			formats: {{ device.extensions_list | join(', ') }}
 		</span>
 	</div>
-	<div class="availability-strip">
-		{% for cell in device.availability.days %}
-		{% set pct = (cell.frac * 100) | round(0, 'floor') | int %}
-		<div class="availability-day">
-			<div class="availability-cell availability-cell-{{ cell.level }}"
-			     title="{{ cell.date }} — {{ cell.total }} files ({{ pct }}% of a full day){% for ext, n in cell.counts.items() %} · {{ ext }}:{{ n }}{% endfor %}"></div>
-			<span class="availability-cell-label">{{ cell.date[5:] }}</span>
+
+	<div class="archive-map-timeline-grid">
+		
+		<div class="archive-map-timeline-row header-row">
+			<div class="archive-map-label-cell"></div>
+			<div class="archive-map-tracks-container header-grid">
+				{% for hour in range(24) %}
+				<div class="hour-tick-mark"><span>{{ "%02d:00" | format(hour) }}</span></div>
+				{% endfor %}
+			</div>
+		</div>
+
+		{% for day in device.archive_timeline %}
+		<div class="archive-map-timeline-row">
+			<div class="archive-map-label-cell">{{ day.label }}</div>
+			
+			<div class="archive-map-tracks-container">
+				
+				<div class="hour-grid-backdrop">
+					{% for hour in range(24) %}
+					<div class="grid-backdrop-column"></div>
+					{% endfor %}
+				</div>
+
+				{% for ext in device.extensions_list %}
+				{% set files = day.extensions[ext] %}
+				<div class="extension-track track-color-{{ ext }}" data-extension="{{ ext }}">
+					{% for file in files %}
+					<div class="file-segment" 
+						 style="left: {{ file.left }}%; width: {{ file.width }}%;"
+						 title="File: {{ file.filename }} &#10;Time Range: {{ file.start_str }} - {{ file.end_str }} (UTC)">
+					</div>
+					{% endfor %}
+				</div>
+				{% endfor %}
+
+			</div>
+		</div>
+		{% endfor %}
+
+	</div>
+
+	<div class="archive-map-legend">
+		{% for ext in device.extensions_list %}
+		<div class="legend-item">
+			<span class="legend-swatch swatch-color-{{ ext }}"></span>
+			<span class="legend-label">{{ ext }}</span>
 		</div>
 		{% endfor %}
 	</div>
-	<div class="availability-legend">
-		<span><span class="availability-swatch availability-cell-good"></span> Full day</span>
-		<span><span class="availability-swatch availability-cell-partial"></span> Partial</span>
-		<span><span class="availability-swatch availability-cell-none"></span> No data</span>
-	</div>
-
-	{% if view == 'instrument' and device.availability.recent_files %}
-	<div class="archived-files">
-		<h5>Last archived files</h5>
-		<ul class="archived-files-list">
-			{% for file in device.availability.recent_files %}
-			<li><span class="archived-file-ext">{{ file.extension }}</span> <code>{{ file.filename }}</code></li>
-			{% endfor %}
-		</ul>
-	</div>
-	{% endif %}
 </div>

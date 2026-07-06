@@ -54,11 +54,16 @@ class ComplexInstrumentPlugin(DataTypePlugin):
         return self._devices
 
     def _build_device(self, dev: dict[str, Any]) -> dict[str, Any]:
+        import re
+        import pandas as pd
+        from datetime import datetime, timedelta, timezone
+
         location_code = dev.get("locationCode") or ""
         site_code = location_code.split(".")[0] if location_code else "UNKNOWN"
         device_id = dev.get("deviceId")
         region = get_region_resolver().resolve(location_code)
 
+        # 1. Pull standard daily summary calculations
         availability = compute_availability(
             self._client,
             dev["deviceCode"],
@@ -66,6 +71,78 @@ class ComplexInstrumentPlugin(DataTypePlugin):
             days=self.availability_days,
             expected_files_per_day=self.expected_files_per_day,
         )
+
+        # 2. Prepare the daily timeline tracking blocks
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(days=self.availability_days)
+        
+        date_list = [(start_time + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(self.availability_days + 1)]
+        timeline_data = {d: {ext: [] for ext in self.extensions} for d in date_list}
+
+        params = {
+            'deviceCode': dev["deviceCode"],
+            'dateFrom': start_time.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+            'dateTo': end_time.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+            'rowLimit': 100000
+        }
+
+        try:
+            res = self._client._onc.getArchivefileByDevice(params)
+            files = res.get('files', []) if isinstance(res, dict) else []
+        except Exception:
+            files = []
+
+        # Your exact filename timestamp extraction pattern
+        pattern = re.compile(r"(\d{8}T\d{6})")
+
+        for f in files:
+            # 🟢 THE FIX: Treat f directly as the filename string instead of a dictionary
+            filename = str(f) if f else ''
+            if not filename:
+                continue
+                
+            ext = filename.split('.')[-1].lower()
+            if ext not in self.extensions:
+                continue
+
+            match = pattern.search(filename)
+            if match:
+                try:
+                    f_start = pd.to_datetime(match.group(1), format='%Y%m%dT%H%M%S').tz_localize('UTC')
+                    date_key = f_start.strftime("%Y-%m-%d")
+                    
+                    if date_key not in timeline_data:
+                        continue
+
+                    # Calculate exact horizontal minute positioning offsets
+                    start_minutes = f_start.hour * 60.0 + f_start.minute + f_start.second / 60.0
+                    duration_minutes = 5.0 
+                    
+                    left_pct = (start_minutes / 1440.0) * 100.0
+                    width_pct = (duration_minutes / 1440.0) * 100.0
+
+                    timeline_data[date_key][ext].append({
+                        "filename": filename,
+                        "start_str": f_start.strftime("%H:%M"),
+                        "left": round(left_pct, 3),
+                        "width": round(width_pct, 3)
+                    })
+                except Exception:
+                    continue
+
+        days_timeline = []
+        for d in date_list:
+            try:
+                dt_obj = datetime.strptime(d, "%Y-%m-%d")
+                lbl = dt_obj.strftime("%b-%d")
+            except Exception:
+                lbl = d
+                
+            days_timeline.append({
+                "date": d,
+                "label": lbl,
+                "extensions": timeline_data[d]
+            })
 
         return {
             "deviceKey": str(device_id or dev["deviceCode"]),
@@ -88,8 +165,13 @@ class ComplexInstrumentPlugin(DataTypePlugin):
             "dataSearchUrl": self._client.oceans3_data_search_url(dev["deviceCode"]),
             "status": availability["status"],
             "availability": availability,
+            "archive_timeline": days_timeline,
+            "extensions_list": self.extensions,
+            "availability_days": self.availability_days,
             "jira_tickets": [],
             "open_annotations": [],
             "plot_series": {},
             "jb_info": [],
         }
+
+        

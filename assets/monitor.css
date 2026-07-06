@@ -36,6 +36,36 @@
 .detail-empty { margin: 0; font-size: 0.88rem; color: var(--theme-text-muted, #59697b); font-style: italic; }
 .jira-list, .annotation-list { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
 .jira-status { color: var(--theme-text-muted, #59697b); }
+
+
+.archive-map-container { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 16px 0;}
+.archive-map-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #edf2f7; padding-bottom: 12px; margin-bottom: 16px; }
+.archive-map-head h4 { margin: 0; font-size: 1.05rem; color: #1a202c; }
+.archive-map-timeline-grid { display: flex; flex-direction: column; width: 100%; overflow-x: auto; }
+.archive-map-timeline-row { display: flex; align-items: stretch; border-bottom: 1px solid #f7fafc; }
+.archive-map-timeline-row.header-row { border-bottom: 2px solid #cbd5e0; padding-bottom: 2px; }
+.archive-map-label-cell { width: 75px; min-width: 75px; display: flex; align-items: center; font-size: 0.78rem; font-weight: 600; color: #4a5568; user-select: none;}
+.archive-map-tracks-container { position: relative; flex-grow: 1; display: flex; flex-direction: column; gap: 4px; padding: 6px 0; min-width: 840px; }
+.archive-map-tracks-container.header-grid { display: grid; grid-template-columns: repeat(24, 1fr); padding: 0; }
+.hour-tick-mark { position: relative; border-left: 1px solid #cbd5e0; height: 18px; }
+.hour-tick-mark span { position: absolute; left: 4px; top: -2px; font-size: 0.68rem; color: #718096; }
+.hour-grid-backdrop { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: grid; grid-template-columns: repeat(24, 1fr); pointer-events: none; z-index: 1; }
+.grid-backdrop-column { border-left: 1px solid #edf2f7; height: 100%; }
+/* File Segment Tracks Container */
+.extension-track { position: relative; height: 15px; background: #121212; border-radius: 2px; z-index: 2; overflow: hidden; }
+.file-segment { position: absolute; top: 0; height: 100%; min-width: 2px; border-right: 1px solid rgba(0, 0, 0, 0.35); box-sizing: border-box; }
+.file-segment:hover { filter: brightness(1.15); cursor: crosshair; }
+/* High-Contrast Dynamic Format Palettes */
+.track-color-flac .file-segment, .swatch-color-flac { background-color: #67e8f9; border-right: 1px solid #0891b2; } /* Cyan */
+.track-color-mat .file-segment, .swatch-color-mat { background-color: #c084fc; border-right: 1px solid #7c3aed; }  /* Purple */
+.track-color-fft .file-segment, .swatch-color-fft { background-color: #34d399; border-right: 1px solid #059669; }  /* Green */
+.track-color-wav .file-segment, .swatch-color-wav { background-color: #f43f5e; border-right: 1px solid #e11d48; }  /* Rose */
+/* Footer swatches legend index block indicators */
+.archive-map-legend { display: flex; gap: 20px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #edf2f7; }
+.legend-item {display: flex; align-items: center; gap: 8px; }
+.legend-swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+.legend-label { font-size: 0.8rem;  color: #4a5568; font-weight: 500;}
+
 .archived-files { margin-top: 0.9rem; }
 .archived-files h5 { margin: 0 0 0.4rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--theme-text-muted, #59697b); }
 .archived-files-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 0.82rem; }
@@ -70,6 +100,10 @@
 .workflow-submit:hover { filter: brightness(1.08); }
 .workflow-secondary { padding: 0.45rem 0.9rem; border: 1px solid var(--theme-accent-strong, #0b4e82); border-radius: 8px; background: transparent; color: var(--theme-accent-strong, #0b4e82); font-weight: 600; cursor: pointer; justify-self: start; }
 .workflow-result { margin-top: 1rem; padding: 0.85rem; background: var(--theme-surface-muted, #0f1b2a); color: var(--theme-code-text, #d7e6f5); border-radius: 8px; font-size: 0.8rem; white-space: pre-wrap; overflow-x: auto; }
+.workflow-report-textarea { width: 100%; height: 350px; font-family: 'Courier New', Courier, monospace; font-size: 0.85rem; padding: 12px; background: #1e293b; color: #f8fafc; border-radius: 6px; border: 1px solid #cbd5e1; resize: vertical; }
+.workflow-copy-btn { margin-top: 8px; padding: 6px 12px; background: var(--theme-accent-strong, #0b6aa8); color: #ffffff; border-radius: 4px; border: none; cursor: pointer; font-size: 0.85rem; }
+.workflow-copy-btn:hover { filter: brightness(1.08); }
+
 .sidebar-empty { padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--theme-text-muted, #59697b); }
 .complex-note { padding: 0.75rem 1rem; font-size: 0.9rem; color: var(--theme-text-muted, #59697b); }
 .data-status-summary { padding: 0.5rem 1rem; }

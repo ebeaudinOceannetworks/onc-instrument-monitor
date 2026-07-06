@@ -87,17 +87,23 @@
 					<h3>Commissioning Report Generator</h3>
 					<p class="workflow-hint">Enter a device code (and optional location), load its deployments, pick the one to commission, then generate the report.</p>
 					<form id="commissioning-form" class="workflow-form">
-						<label>Device code <input name="device_code" placeholder="e.g. SBECTD16p6002" required></label>
-						<label>Location code (optional) <input name="location_code" placeholder="e.g. BACAX"></label>
+						<label>Device code <input name="device_code" placeholder="e.g. ICLISTENHF6021" required></label>
+						<label>Location code (optional) <input name="location_code" placeholder="e.g. KVIP"></label>
 						<button type="button" id="load-deployments-btn" class="workflow-secondary">Load deployments</button>
 						<label>Deployment
 							<select name="deployment" id="deployment-select" disabled>
 								<option value="">Load deployments first…</option>
 							</select>
 						</label>
+						<label>Review Phase
+							<select name="review_phase" id="review-phase-select">
+								<option value="quick">Phase 1: Quick Review (Shortly after deployment)</option>
+								<option value="detailed">Phase 2: Detailed Assessment (~1-2 months post-deployment)</option>
+							</select>
+						</label>
 						<button type="submit" class="workflow-submit">Generate commissioning report</button>
 					</form>
-					<pre id="commissioning-result" class="workflow-result" hidden></pre>
+					<div id="commissioning-result-container" class="workflow-result-wrapper" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 1rem;" hidden></div>
 				</section>
 			</div>
 		</div>
@@ -125,71 +131,143 @@
 
 	<script id="hydrophone-map-data" type="application/json">{{ map_markers | tojson }}</script>
 	<script>
-	(function() {
-		var mapBtn = document.getElementById('map-tab-button');
-		var workflowBtn = document.getElementById('workflows-tab-button');
-		var mapPanel = document.getElementById('map-tab-panel');
-		var workflowPanel = document.getElementById('workflows-tab-panel');
-		var detailsPanel = document.getElementById('details-tab-panel');
+		(function() {
+			var mapBtn = document.getElementById('map-tab-button');
+			var workflowBtn = document.getElementById('workflows-tab-button');
+			var mapPanel = document.getElementById('map-tab-panel');
+			var workflowPanel = document.getElementById('workflows-tab-panel');
+			var detailsPanel = document.getElementById('details-tab-panel');
 
-		function showWorkflowsTab() {
-			if (mapPanel) { mapPanel.hidden = true; mapPanel.setAttribute('aria-hidden', 'true'); }
-			if (detailsPanel) { detailsPanel.hidden = true; detailsPanel.setAttribute('aria-hidden', 'true'); }
-			if (workflowPanel) { workflowPanel.hidden = false; workflowPanel.setAttribute('aria-hidden', 'false'); }
-			if (mapBtn) mapBtn.classList.remove('active');
-			if (workflowBtn) workflowBtn.classList.add('active');
-		}
-		if (workflowBtn) workflowBtn.addEventListener('click', function(e) { e.preventDefault(); showWorkflowsTab(); });
-		if (mapBtn) mapBtn.addEventListener('click', function() {
-			if (workflowPanel) { workflowPanel.hidden = true; workflowPanel.setAttribute('aria-hidden', 'true'); }
-			if (workflowBtn) workflowBtn.classList.remove('active');
-		});
-
-		function postJson(url, payload) {
-			return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function(r) { return r.json(); });
-		}
-		function formPayload(form) {
-			return Object.fromEntries(new FormData(form).entries());
-		}
-		function showResult(el, data) {
-			el.hidden = false;
-			el.textContent = (data && data.report_text) ? data.report_text : JSON.stringify(data, null, 2);
-		}
-
-		var prefix = '{{ dashboard_url_prefix or '' }}';
-		var vf = document.getElementById('validation-form');
-		if (vf) vf.addEventListener('submit', async function(e) {
-			e.preventDefault();
-			showResult(document.getElementById('validation-result'), await postJson(prefix + '/api/workflows/validation', formPayload(vf)));
-		});
-
-		var cf = document.getElementById('commissioning-form');
-		var loadBtn = document.getElementById('load-deployments-btn');
-		var depSelect = document.getElementById('deployment-select');
-		if (loadBtn) loadBtn.addEventListener('click', async function() {
-			var deviceCode = cf.querySelector('[name=device_code]').value.trim();
-			var locationCode = cf.querySelector('[name=location_code]').value.trim();
-			if (!deviceCode) { depSelect.innerHTML = '<option value="">Enter a device code first</option>'; return; }
-			loadBtn.textContent = 'Loading…'; loadBtn.disabled = true;
-			try {
-				var data = await postJson(prefix + '/api/workflows/commissioning/deployments', { device_code: deviceCode, location_code: locationCode });
-				var deps = (data && data.deployments) || [];
-				if (!deps.length) {
-					depSelect.innerHTML = '<option value="">No deployments found</option>';
-					depSelect.disabled = true;
-				} else {
-					depSelect.innerHTML = deps.map(function(d) { return '<option value="' + d.value + '">' + d.label + '</option>'; }).join('');
-					depSelect.disabled = false;
-				}
-			} finally {
-				loadBtn.textContent = 'Load deployments'; loadBtn.disabled = false;
+			function showWorkflowsTab() {
+				if (mapPanel) { mapPanel.hidden = true; mapPanel.setAttribute('aria-hidden', 'true'); }
+				if (detailsPanel) { detailsPanel.hidden = true; detailsPanel.setAttribute('aria-hidden', 'true'); }
+				if (workflowPanel) { workflowPanel.hidden = false; workflowPanel.setAttribute('aria-hidden', 'false'); }
+				if (mapBtn) mapBtn.classList.remove('active');
+				if (workflowBtn) workflowBtn.classList.add('active');
 			}
-		});
-		if (cf) cf.addEventListener('submit', async function(e) {
-			e.preventDefault();
-			showResult(document.getElementById('commissioning-result'), await postJson(prefix + '/api/workflows/commissioning', formPayload(cf)));
-		});
-	})();
-	</script>
+			if (workflowBtn) workflowBtn.addEventListener('click', function(e) { e.preventDefault(); showWorkflowsTab(); });
+			if (mapBtn) mapBtn.addEventListener('click', function() {
+				if (workflowPanel) { workflowPanel.hidden = true; workflowPanel.setAttribute('aria-hidden', 'true'); }
+				if (workflowBtn) workflowBtn.classList.remove('active');
+			});
+
+			function postJson(url, payload) {
+				return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function(r) { return r.json(); });
+			}
+			// Safely handles unchecked data elements
+			function formPayload(form) {
+				var obj = {};
+				new FormData(form).forEach(function(val, key) { obj[key] = val; });
+				return obj;
+			}
+
+			function showCommissioningResult(container, data) {
+				container.innerHTML = '';
+				container.hidden = false;
+
+				if (!data || data.status === 'error') {
+					container.innerHTML = '<div style="color: var(--theme-text-danger, #dc3545); font-size: 0.9rem; font-weight:600;">❌ Error: ' + (data.message || 'Processing loop rejected request') + '</div>';
+					return;
+				}
+
+				// A. Text Area Component for copying markdown logs into Jira
+				if (data.report_text) {
+					var textGroup = document.createElement('div');
+					textGroup.style.display = 'flex';
+					textGroup.style.flexDirection = 'column';
+					
+					var textarea = document.createElement('textarea');
+					textarea.className = 'workflow-report-textarea';
+					textarea.readOnly = true;
+					textarea.value = data.report_text;
+					
+					var copyBtn = document.createElement('button');
+					copyBtn.type = 'button';
+					copyBtn.className = 'workflow-copy-btn';
+					copyBtn.textContent = 'Copy JIRA Markup';
+					copyBtn.onclick = function() {
+						textarea.select();
+						document.execCommand('copy');
+						copyBtn.textContent = 'Copied!';
+						setTimeout(function() { copyBtn.textContent = 'Copy JIRA Markup'; }, 2000);
+					};
+					
+					textGroup.appendChild(textarea);
+					textGroup.appendChild(copyBtn);
+					container.appendChild(textGroup);
+				}
+
+				// B. Plots Container Loop
+				if (data.plots && data.plots.length > 0) {
+					var plotsDivider = document.createElement('div');
+					plotsDivider.style.margin = '1.5rem 0 0.5rem 0';
+					plotsDivider.style.fontWeight = '700';
+					plotsDivider.style.fontSize = '1.05rem';
+					plotsDivider.textContent = 'Generated Quality Evaluation Metrics';
+					container.appendChild(plotsDivider);
+
+					var plotsGrid = document.createElement('div');
+					plotsGrid.className = 'soo-plots-grid';
+
+					data.plots.forEach(function(plot) {
+						var card = document.createElement('div');
+						card.className = 'soo-plot-card';
+						card.style.minWidth = '100%';
+						
+						var h4 = document.createElement('h4');
+						h4.textContent = plot.title;
+						
+						var img = document.createElement('img');
+						img.src = prefix + '/' + plot.url + '?t=' + new Date().getTime(); // Break proxy caching issues
+						img.className = 'soo-plot-img';
+						
+						card.appendChild(h4);
+						card.appendChild(img);
+						plotsGrid.appendChild(card);
+					});
+					container.appendChild(plotsGrid);
+				}
+			}
+
+			function showResult(el, data) {
+				el.hidden = false;
+				el.textContent = (data && data.report_text) ? data.report_text : JSON.stringify(data, null, 2);
+			}
+
+			var prefix = '{{ dashboard_url_prefix or "" }}';
+			var vf = document.getElementById('validation-form');
+			if (vf) vf.addEventListener('submit', async function(e) {
+				e.preventDefault();
+				showResult(document.getElementById('validation-result'), await postJson(prefix + '/api/workflows/validation', formPayload(vf)));
+			});
+
+			var cf = document.getElementById('commissioning-form');
+			var loadBtn = document.getElementById('load-deployments-btn');
+			var depSelect = document.getElementById('deployment-select');
+			if (loadBtn) loadBtn.addEventListener('click', async function() {
+				var deviceCode = cf.querySelector('[name=device_code]').value.trim();
+				var locationCode = cf.querySelector('[name=location_code]').value.trim();
+				if (!deviceCode) { depSelect.innerHTML = '<option value="">Enter a device code first</option>'; return; }
+				loadBtn.textContent = 'Loading…'; loadBtn.disabled = true;
+				try {
+					var data = await postJson(prefix + '/api/workflows/commissioning/deployments', { device_code: deviceCode, location_code: locationCode });
+					var deps = (data && data.deployments) || [];
+					if (!deps.length) {
+						depSelect.innerHTML = '<option value="">No deployments found</option>';
+						depSelect.disabled = true;
+					} else {
+						depSelect.innerHTML = deps.map(function(d) { return '<option value="' + d.value + '">' + d.label + '</option>'; }).join('');
+						depSelect.disabled = false;
+					}
+				} finally {
+					loadBtn.textContent = 'Load deployments'; loadBtn.disabled = false;
+				}
+			});
+			if (cf) cf.addEventListener('submit', async function(e) {
+				e.preventDefault();
+				showCommissioningResult(document.getElementById('commissioning-result-container'), await postJson(prefix + '/api/workflows/commissioning', formPayload(cf)));
+			});
+		})();
+		</script>
 </body>
 </html>
