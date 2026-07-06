@@ -129,6 +129,34 @@ def resolve_data_types_and_categories(onc_client) -> dict[str, Any]:
         if cat['deviceCategoryCode'].upper() != 'WINDMONITOR'
         if cat['deviceCategoryCode'].upper() != 'CAMLIGHTS'
         if cat['deviceCategoryCode'].upper() != 'ICE_BUOY'
+
+        if cat['deviceCategoryCode'].upper() != 'CTD'
+        if cat['deviceCategoryCode'].upper() != 'ADCP1200KHZ'
+        if cat['deviceCategoryCode'].upper() != 'ADCP150KHZ'
+        if cat['deviceCategoryCode'].upper() != 'ADCP1MHZ'
+        if cat['deviceCategoryCode'].upper() != 'ADCP2MHZ'
+        if cat['deviceCategoryCode'].upper() != 'ADCP300KHZ'
+        if cat['deviceCategoryCode'].upper() != 'ADCP55KHZ'
+        if cat['deviceCategoryCode'].upper() != 'ADCP600KHZ'
+        if cat['deviceCategoryCode'].upper() != 'ADCP75KHZ'
+        if cat['deviceCategoryCode'].upper() != 'CTD'
+        if cat['deviceCategoryCode'].upper() != 'ACCELEROMETER'
+        if cat['deviceCategoryCode'].upper() != 'BARPRESS'
+        if cat['deviceCategoryCode'].upper() != 'BPR'
+        if cat['deviceCategoryCode'].upper() != 'CURRENTMETER'
+        if cat['deviceCategoryCode'].upper() != 'FLUOROMETER'
+        if cat['deviceCategoryCode'].upper() != 'JB'
+        if cat['deviceCategoryCode'].upper() != 'OXYSENSOR'
+        if cat['deviceCategoryCode'].upper() != 'VIDEOCAM'
+        if cat['deviceCategoryCode'].upper() != 'CO2SENSOR'
+        if cat['deviceCategoryCode'].upper() != 'ECHOSOUNDERBIOA'
+        if cat['deviceCategoryCode'].upper() != 'FLNTU'
+        if cat['deviceCategoryCode'].upper() != 'IMGROTARYSONAR'
+
+
+
+
+
     ]
     
     # Load configuration file rules

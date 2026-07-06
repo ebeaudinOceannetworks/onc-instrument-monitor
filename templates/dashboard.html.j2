@@ -74,7 +74,7 @@
 		<div id="workflows-tab-panel" class="tab-panel" role="tabpanel" hidden>
 			<div class="workflow-grid">
 				<section class="workflow-card">
-					<h3>Validation Report Generator</h3>
+					<h3>Validation</h3>
 					<p class="workflow-hint">Enter the reference device ID (e.g. the MTC integration-lab reference instrument). Pulls metadata and generates a validation starting point.</p>
 					<form id="validation-form" class="workflow-form">
 						<label>Reference device ID <input name="reference_device_id" placeholder="e.g. 23456 or SBECTD16p6002" required></label>
@@ -84,24 +84,27 @@
 				</section>
 
 				<section class="workflow-card">
-					<h3>Commissioning Report Generator</h3>
-					<p class="workflow-hint">Enter a device code (and optional location), load its deployments, pick the one to commission, then generate the report.</p>
+					<h3>Commissioning</h3>
+					<p class="workflow-hint">Enter a device ID (and optional location), load its deployments, pick the one to commission, then generate the report.</p>
 					<form id="commissioning-form" class="workflow-form">
-						<label>Device code <input name="device_code" placeholder="e.g. ICLISTENHF6021" required></label>
-						<label>Location code (optional) <input name="location_code" placeholder="e.g. KVIP"></label>
-						<button type="button" id="load-deployments-btn" class="workflow-secondary">Load deployments</button>
-						<label>Deployment
-							<select name="deployment" id="deployment-select" disabled>
-								<option value="">Load deployments first…</option>
-							</select>
-						</label>
-						<label>Review Phase
-							<select name="review_phase" id="review-phase-select">
-								<option value="quick">Phase 1: Quick Review (Shortly after deployment)</option>
-								<option value="detailed">Phase 2: Detailed Assessment (~1-2 months post-deployment)</option>
-							</select>
-						</label>
-						<button type="submit" class="workflow-submit">Generate commissioning report</button>
+					    <label>Device ID <input name="device_id" placeholder="e.g. 50400" required></label>
+					    <label>Location code (optional) <input name="location_code" placeholder="e.g. KVIP"></label>
+					    <button type="button" id="load-deployments-btn" class="workflow-secondary">Load deployments</button>
+					    <label>Deployment
+					        <select name="deployment" id="deployment-select" disabled>
+					            <option value="">Load deployments first…</option>
+					        </select>
+					    </label>
+					    <label>Review Phase
+					        <select name="review_phase" id="review-phase-select">
+					            <option value="quick">Phase 1: Quick Review (Shortly after deployment)</option>
+					            <option value="detailed">Phase 2: Detailed Assessment (~1-2 months post-deployment)</option>
+					        </select>
+					    </label>
+
+					    <div id="dynamic-workflow-checklist"></div>
+					    
+					    <button type="submit" class="workflow-submit">Generate commissioning report</button>
 					</form>
 					<div id="commissioning-result-container" class="workflow-result-wrapper" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 1rem;" hidden></div>
 				</section>
@@ -137,6 +140,24 @@
 			var mapPanel = document.getElementById('map-tab-panel');
 			var workflowPanel = document.getElementById('workflows-tab-panel');
 			var detailsPanel = document.getElementById('details-tab-panel');
+			var phaseSelect = document.getElementById('review-phase-select');
+			var checklistContainer = document.getElementById('dynamic-workflow-checklist');
+
+			function updateChecklistVisibility() {
+				if (!phaseSelect) return;
+				var phase = phaseSelect.value;
+				document.querySelectorAll('.phase-section').forEach(function(el) {
+					if (phase === 'detailed') {
+						el.hidden = !el.classList.contains('phase-detailed');
+					} else {
+						el.hidden = !el.classList.contains('phase-quick');
+					}
+				});
+			}
+
+			if (phaseSelect) {
+				phaseSelect.addEventListener('change', updateChecklistVisibility);
+			}
 
 			function showWorkflowsTab() {
 				if (mapPanel) { mapPanel.hidden = true; mapPanel.setAttribute('aria-hidden', 'true'); }
@@ -244,30 +265,40 @@
 			var cf = document.getElementById('commissioning-form');
 			var loadBtn = document.getElementById('load-deployments-btn');
 			var depSelect = document.getElementById('deployment-select');
-			if (loadBtn) loadBtn.addEventListener('click', async function() {
-				var deviceCode = cf.querySelector('[name=device_code]').value.trim();
-				var locationCode = cf.querySelector('[name=location_code]').value.trim();
-				if (!deviceCode) { depSelect.innerHTML = '<option value="">Enter a device code first</option>'; return; }
-				loadBtn.textContent = 'Loading…'; loadBtn.disabled = true;
-				try {
-					var data = await postJson(prefix + '/api/workflows/commissioning/deployments', { device_code: deviceCode, location_code: locationCode });
-					var deps = (data && data.deployments) || [];
-					if (!deps.length) {
-						depSelect.innerHTML = '<option value="">No deployments found</option>';
-						depSelect.disabled = true;
-					} else {
-						depSelect.innerHTML = deps.map(function(d) { return '<option value="' + d.value + '">' + d.label + '</option>'; }).join('');
-						depSelect.disabled = false;
-					}
-				} finally {
-					loadBtn.textContent = 'Load deployments'; loadBtn.disabled = false;
-				}
-			});
+			
+			if (loadBtn) {
+			    loadBtn.addEventListener('click', async function() {
+			        var deviceId = cf.querySelector('[name=device_id]').value.trim();
+			        var locationCode = cf.querySelector('[name=location_code]').value.trim();
+			        if (!deviceId) { depSelect.innerHTML = '<option value="">Enter a device ID first</option>'; return; }
+			        loadBtn.textContent = 'Loading…'; loadBtn.disabled = true;
+			        try {
+			            var data = await postJson(prefix + '/api/workflows/commissioning/deployments', { 
+			                device_id: deviceId, // 💡 Semantic match across all architectural layers
+			                location_code: locationCode 
+			            });
+			            var deps = (data && data.deployments) || [];
+			            if (!deps.length) {
+			                depSelect.innerHTML = '<option value="">No deployments found</option>';
+			                depSelect.disabled = true;
+			            } else {
+			                depSelect.innerHTML = deps.map(function(d) { return '<option value="' + d.value + '">' + d.label + '</option>'; }).join('');
+			                depSelect.disabled = false;
+			            }
+			            if (checklistContainer) {
+			                checklistContainer.innerHTML = data.checklist_html || '';
+			                updateChecklistVisibility();
+			            }
+			        } finally {
+			            loadBtn.textContent = 'Load deployments'; loadBtn.disabled = false;
+			        }
+			    });
+			}
 			if (cf) cf.addEventListener('submit', async function(e) {
 				e.preventDefault();
 				showCommissioningResult(document.getElementById('commissioning-result-container'), await postJson(prefix + '/api/workflows/commissioning', formPayload(cf)));
 			});
 		})();
-		</script>
+	</script>
 </body>
 </html>

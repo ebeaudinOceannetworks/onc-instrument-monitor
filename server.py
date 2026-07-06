@@ -104,22 +104,25 @@ def validation_workflow():
 @app.route("/api/workflows/commissioning/deployments", methods=["POST"])
 def commissioning_deployments():
     body = request.get_json(force=True, silent=True) or {}
-    deployments = list_available_deployments(
-        str(body.get("device_code", "")).strip(),
-        str(body.get("location_code", "")).strip(),
+    result = list_available_deployments(
+        device_id=str(body.get("device_id", "")).strip(),
+        location_code=str(body.get("location_code", "")).strip(),
     )
-    return jsonify({"deployments": deployments})
-
+    return jsonify(result)
 
 @app.route("/api/workflows/commissioning", methods=["POST"])
 def commissioning_workflow():
     body = request.get_json(force=True, silent=True) or {}
+    
+    checklist = {k: (v == 'on' or v is True) for k, v in body.items() if k.startswith('chk_')}
+    
     result = run_commissioning(
         CommissioningRequest(
-            device_code=str(body.get("device_code", "")),
+            device_id=str(body.get("device_id", "")), # 💡 Using our newly refactored constructor parameter name
             location_code=str(body.get("location_code", "")),
             deployment=str(body.get("deployment", "")),
             review_phase=str(body.get("review_phase", "")),
+            checklist=checklist
         )
     )
     return jsonify(result)
